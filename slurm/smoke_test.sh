@@ -9,8 +9,19 @@
 # The whole path, small: serve, run two tasks of one dataset through two memory
 # modules, and check what came out. Run this before submitting a 24-hour job, and
 # after any change to the cluster, the model or the environment.
+#
+# Defaults to fever. Any other dataset with
+#   TASK=alfworld sbatch slurm/smoke_test.sh
+#
+# VENV picks the environment the run uses, so a dataset whose simulator is not in
+# the shared one can be checked against a venv of its own without disturbing a
+# queued job that shares it:
+#   VENV=~/alfworld-test-venv TASK=alfworld sbatch slurm/smoke_test.sh
 
 set -euo pipefail
+
+TASK=${TASK:-fever}
+VENV=${VENV:-.venv}
 
 echo SERVING ON $HOSTNAME
 
@@ -22,7 +33,7 @@ MODEL_NAME="openai/gpt-oss-120b"
 YAML_CONFIG="/projects/public/brics/distributed_vllm/GPT-OSS_Hopper.yaml"
 HF_HOME=/projects/public/brics/hf
 MODEL_PATH=$HF_HOME/hub/models--openai--gpt-oss-120b/snapshots/b5c939de8f754692c1647ca79fbf85e8c1e70f8a/
-DB_DIR=./.db/smoke-${SLURM_JOB_ID:-local}
+DB_DIR=./.db/smoke-${TASK}-${SLURM_JOB_ID:-local}
 
 export TIKTOKEN_ENCODINGS_BASE="/projects/public/brics/distributed_vllm/etc/encodings"
 
@@ -44,7 +55,15 @@ srun \
 
 VLLM_PID=$!
 
+# The wait has to end when the server dies as well as when it answers: a vLLM
+# that fails to start never serves /health, and the loop alone would spend the
+# whole allocation waiting for it.
 until curl -s http://localhost:8000/health > /dev/null 2>&1; do
+  if ! kill -0 ${VLLM_PID} 2>/dev/null; then
+    echo "SMOKE TEST FAILED: vLLM exited before it answered /health"
+    wait ${VLLM_PID} || true
+    exit 1
+  fi
   echo "Waiting for vLLM to be ready..."
   sleep 5
 done
@@ -56,7 +75,10 @@ export OPENAI_API_BASE=http://localhost:8000/v1
 export OPENAI_API_KEY="none"
 
 cd ~/GMemory
-source .venv/bin/activate
+# `uv run` ignores an activated venv that is not the project's own and uses .venv
+# regardless, with a warning - so the choice has to be made through uv's variable.
+export UV_PROJECT_ENVIRONMENT="${VENV}"
+source ${VENV}/bin/activate
 
 # The result files are appended to under an flock, which a filesystem has to be
 # mounted for. Lustre supports it with the flock mount option; without it,
@@ -68,9 +90,10 @@ else
   echo "flock: REFUSED - jobs writing to one results file may interleave"
 fi
 
-# FEVER's Search action goes to live Wikipedia, so the task needs outbound network
-# from the compute node. Without it every claim fails and the run still writes rows -
-# which is why the assertion below is on tasks_scored, not just on the row count.
+# FEVER and HotpotQA reach live Wikipedia through Search, so those tasks need
+# outbound network from the compute node. Without it every claim fails and the run
+# still writes rows - which is why the assertion below is on tasks_scored, not just
+# on the row count.
 echo -n "wikipedia reachable: "
 curl -s -o /dev/null -w '%{http_code}\n' --max-time 20 \
   https://en.wikipedia.org/api/rest_v1/page/summary/Water || echo "unreachable"
@@ -78,8 +101,16 @@ curl -s -o /dev/null -w '%{http_code}\n' --max-time 20 \
 # ScienceWorld runs a JVM through py4j, so the sciworld jobs need java on PATH.
 echo -n "java: "; java -version 2>&1 | head -1 || echo "absent - sciworld will not start"
 
-uv run tasks/run.py \
-	--task fever \
+# ALFWorld plays a .tw-pddl game file per task, and neither its simulator nor the
+# games are installed by `uv sync`; see the ALFWorld section of data/data.md.
+echo -n "alfworld: "
+uv run --no-sync python -c 'import alfworld, textworld; print("simulator", alfworld.__version__)' \
+  2>&1 | tail -1 || echo "absent - alfworld will not start"
+echo -n "alfworld games: "
+find data/alfworld -name 'game.tw-pddl' 2>/dev/null | wc -l
+
+uv run --no-sync tasks/run.py \
+	--task ${TASK} \
 	--mas_type autogen \
 	--mas_memory empty intrinsicmemory-notemplate \
 	--seed 11 \

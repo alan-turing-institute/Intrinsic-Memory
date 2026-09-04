@@ -13,9 +13,9 @@ SLURM_DIR = Path(__file__).parent
 # --- experiment matrix ---------------------------------------------------
 # One experiment script per task runs its TASKS x BASELINE_MEMORIES x SEEDS
 # combinations plus the intrinsic ablations: 10 arms x 10 seeds. One crosstask
-# script covers every task's intrinsic arms again: 6 x 3 arms x 10 seeds.
+# script covers every task's intrinsic arms again: 7 x 3 arms x 10 seeds.
 
-TASKS = ["babyai", "fever", "hotpotqa", "jericho", "pddl", "sciworld"]
+TASKS = ["alfworld", "babyai", "fever", "hotpotqa", "jericho", "pddl", "sciworld"]
 SEEDS = [11, 22, 33, 44, 55, 66, 77, 88, 99, 111]
 
 # Non-intrinsic baselines, run in the experiment script only.
@@ -27,8 +27,9 @@ BASELINE_MEMORIES = [
 INTRINSIC_ABLATIONS = ["intrinsicmemory-notemplate", "intrinsicmemory-llm-structured-template"]
 
 # vLLM's request queue depth. A job's requests in flight are its experiment
-# count, which is at most 180, and the KV cache holds 3,730,336 tokens - 227 of
-# them at MAX_MODEL_LEN. Past that the depth is a number the server cannot honour.
+# count, which is at most 210 - the crosstask job, seven datasets x 3 arms x 10
+# seeds - and the KV cache holds 3,730,336 tokens, 227 of them at MAX_MODEL_LEN.
+# Past that the depth is a number the server cannot honour.
 MAX_NUM_SEQS = 256
 
 # The budget a call starts at, per task; tasks not listed use DEFAULT_MAX_TOKENS.
