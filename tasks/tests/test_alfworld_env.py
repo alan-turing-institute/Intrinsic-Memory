@@ -37,8 +37,9 @@ GOAL = (
 class FakeBatchEnv:
     """One TextWorld batch of one game, driven by a script of replies.
 
-    A script entry is `(observation, won, done)`. Past the end of the script the
-    game answers as it does to a command it did not understand.
+    A script entry is `(observation, won, ended)` - the two are not the same, and
+    telling them apart is what `step` has to get right. Past the end of the script
+    the game answers as it does to a command it did not understand.
     """
 
     def __init__(self, script: list[tuple[str, bool, bool]]):
@@ -53,9 +54,9 @@ class FakeBatchEnv:
 
     def step(self, commands: list[str]):
         self.commands.append(commands[0])
-        observation, won, done = self.script.pop(0) if self.script else (REJECTED, False, False)
+        observation, won, ended = self.script.pop(0) if self.script else (REJECTED, False, False)
 
-        return [observation], (0,), (done,), {'won': [won]}
+        return [observation], (0,), (ended,), {'won': [won]}
 
     def close(self):
         self.closed += 1
@@ -259,15 +260,16 @@ def test_the_trial_budget_is_the_limit_the_simulator_enforces(build, max_trials)
 # ── what the episode scored ───────────────────────────────────────────────────
 
 def test_an_episode_that_ran_out_of_steps_is_not_scored_as_a_win(build, gamefile):
-    """TextWorld reports `done` when the step limit is reached as well as on a
-    win, so an episode scored on `done` records a success for every task that
-    merely ran out of turns."""
+    """TextWorld ends the episode when the step limit is reached as well as on a
+    win, so an episode scored on what `step` returns records a success for every
+    task that merely ran out of turns."""
     env = build(script=[('You arrive at desk 1.', False, True)])
     env.set_env(task_config(gamefile))
 
-    _, _, done = env.step('go to desk 1')
+    _, _, ended = env.step('go to desk 1')
 
-    assert done is True, 'the episode is over either way'
+    assert ended is True, 'the episode is over either way'
+    assert env.done is False, 'the task was not finished'
     assert env.feedback() == (0.0, False, 'You failed the task.')
 
 
@@ -275,9 +277,10 @@ def test_a_win_is_scored(build, gamefile):
     env = build(script=[('You put the mug 1 in/on the desk 1.', True, True)])
     env.set_env(task_config(gamefile))
 
-    observation, reward, done = env.step('put mug 1 in/on desk 1')
+    observation, reward, ended = env.step('put mug 1 in/on desk 1')
 
-    assert (reward, done) == (1, True)
+    assert (reward, ended) == (1, True)
+    assert env.done is True, 'a win is what `done` means, as it does in every other env'
     assert env.feedback() == (1.0, True, 'You successfully finished this task!')
     assert observation == 'You put the mug 1 in/on the desk 1.'
 
@@ -293,7 +296,7 @@ def test_a_command_the_game_refused_is_scored_below_one_it_carried_out(build, ga
     assert env.step('go to desk 1')[1] == 0
 
 
-def test_a_new_task_starts_from_an_unwon_episode(build, gamefile, tmp_path):
+def test_a_new_task_starts_from_an_unfinished_episode(build, gamefile, tmp_path):
     """`feedback` is read once per episode; a win left set would score the next
     task as solved before it took a turn."""
     second = tmp_path / 'pick_clean_then_place-Mug-None-Desk-1' / 'trial_1' / 'game.tw-pddl'
@@ -324,10 +327,10 @@ def test_a_reasoning_step_never_reaches_the_simulator(build, gamefile, thought):
     env = build()
     env.set_env(task_config(gamefile))
 
-    observation, _, done = env.step(thought)
+    observation, _, ended = env.step(thought)
 
     assert observation == 'OK.'
-    assert done is False
+    assert ended is False
     assert env.main_env.built[-1].commands == [], 'the thought was sent to the game'
 
 

@@ -89,7 +89,6 @@ class AlfworldEnv(BaseEnv):
         self.gamefile: str = None
         self.env_name: str = None
         self.done: bool = False
-        self.won: bool = False
 
     def set_env(self, configs: dict) -> tuple[str, str]:
         gamefile: str = (configs.get('env_kwargs') or {}).get('gamefile')
@@ -134,7 +133,6 @@ class AlfworldEnv(BaseEnv):
         self.env.reset()
 
         self.done = False
-        self.won = False
 
     def step(self, action: str) -> tuple[str, float, bool]:
 
@@ -143,28 +141,25 @@ class AlfworldEnv(BaseEnv):
         if self.is_thought(action):
             return 'OK.', -1, False
 
-        observation, _, done, info = self.env.step([action])
+        observation, _, ended, info = self.env.step([action])
         observation = process_ob(observation[0])
 
-        self.won = bool(info['won'][0])
-        self.done = bool(done[0])
+        # TextWorld ends an episode that ran out of steps as well as one that was
+        # won, so what the task scored is `won` and never `ended`.
+        self.done = bool(info['won'][0])
 
         if observation == REJECTED:
             reward = -1
         else:
-            reward = 1 if self.won else 0
+            reward = 1 if self.done else 0
 
-        return observation, reward, self.done
+        return observation, reward, bool(ended[0])
 
     def feedback(self) -> tuple[float, bool, str]:
-        """What the episode scored, which `done` alone cannot say.
+        """Pass or fail: an ALFRED task is either finished or it is not."""
+        message = "You successfully finished this task!" if self.done else "You failed the task."
 
-        TextWorld reports `done` for an episode that ran out of steps as well as
-        for one that was won, so the win is read off `info['won']` instead.
-        """
-        message = "You successfully finished this task!" if self.won else "You failed the task."
-
-        return 1.0 if self.won else 0.0, self.won, message
+        return 1.0 if self.done else 0.0, self.done, message
 
     def _parse_task_main(self, task: str):
         return self.env_name + '-' + re.search(r'Your task is to:\s*(.+)', task, re.DOTALL).group(1).strip()
