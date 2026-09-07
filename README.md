@@ -113,9 +113,9 @@ Flags marked **(sweep)** accept multiple values (`nargs='+'`). Any flag given mo
 
 | Flag | Default | Description |
 |---|---|---|
-| `--task` (sweep) | `alfworld` | One or more of `alfworld`, `babyai`, `fever`, `hotpotqa`, `jericho`, `pddl`, `sciworld` |
+| `--task` (sweep) | `alfworld` | One or more of `alfworld`, `babyai`, `fever`, `hotpotqa`, `jericho`, `pddl`, `sciworld`, `swebench` |
 | `--mas_type` | **required** | One of `autogen`, `dylan`, `macnet` |
-| `--mas_memory` (sweep) | **required** | One or more memory modules: `empty`, `voyager`, `memorybank`, `chatdev`, `generative`, `metagpt`, `g-memory`, `intrinsicmemory-pddl`, `intrinsicmemory-fever`, `intrinsicmemory-hotpotqa`, `intrinsicmemory-jericho`, `intrinsicmemory-babyai`, `intrinsicmemory-sciworld`, `intrinsicmemory-alfworld`, `intrinsicmemory-llm-structured-template`, `intrinsicmemory-notemplate` |
+| `--mas_memory` (sweep) | **required** | One or more memory modules: `empty`, `voyager`, `memorybank`, `chatdev`, `generative`, `metagpt`, `g-memory`, `intrinsicmemory-pddl`, `intrinsicmemory-fever`, `intrinsicmemory-hotpotqa`, `intrinsicmemory-jericho`, `intrinsicmemory-babyai`, `intrinsicmemory-sciworld`, `intrinsicmemory-alfworld`, `intrinsicmemory-swebench`, `intrinsicmemory-llm-structured-template`, `intrinsicmemory-notemplate` |
 | `--reasoning` | `io` | Reasoning module |
 | `--model` (sweep) | `gpt-3.5-turbo-0125` | LLM model name, as recognized by your `OPENAI_API_BASE` backend |
 | `--max_trials` | each task's `max_steps` | Trials one episode gets. Unset, the budget comes from that task's entry in `tasks/configs.yaml` (30 for all but Jericho, which is 100); given, it overrides every task in the sweep |
@@ -229,6 +229,7 @@ Please download the ALFWorld, PDDL, FEVER datasets and place it in the data fold
 - 🔎 [HotpotQA](https://hotpotqa.github.io/)
 - 📖 [Jericho](https://github.com/microsoft/jericho) (game roms: [z-machine-games](https://github.com/BYU-PCCL/z-machine-games))
 - 🧱 [BabyAI](https://github.com/Farama-Foundation/Minigrid)
+- 🛠️ [SWE-bench Verified](https://www.swebench.com/) (per-instance container images, built for aarch64: `containers/isambard.md`)
 
 The file structure should be organized as follows:
 ```
@@ -249,13 +250,15 @@ data
     └── babyai_levels.jsonl
 └── sciworld
     └── test.jsonl
+└── swebench
+    └── verified.jsonl
 ```
 
-Each dataset is parsed only when a task asks for it, so a FEVER-only run does not need the other six manifests present.
+Each dataset is parsed only when a task asks for it, so a FEVER-only run does not need the other seven manifests present.
 
-FEVER and HotpotQA both drive live Wikipedia through their `Search` and `Lookup` actions, so those two need outbound network from wherever the run happens; the other five are self-contained once their simulator is installed.
+FEVER and HotpotQA both drive live Wikipedia through their `Search` and `Lookup` actions, so those two need outbound network from wherever the run happens; the other five are self-contained once their simulator is installed. SWE-bench needs neither a simulator nor a network, but it does need a container runtime and one built image per instance.
 
-The two manifests added by this fork are checked in, but the data they name is not. Jericho's manifest lists 56 games and needs the rom files themselves under `data/jericho/roms/`; `data/data.md` has the command. BabyAI needs no download at all — `minigrid` generates each gridworld from the level name and seed in the manifest.
+The three manifests added by this fork are checked in, but the data they name is not. Jericho's manifest lists 56 games and needs the rom files themselves under `data/jericho/roms/`; `data/data.md` has the command. BabyAI needs no download at all — `minigrid` generates each gridworld from the level name and seed in the manifest. SWE-bench's names 333 instances and needs the task repository and an image per instance; `containers/isambard.md` has both.
 
 ### 🔑 Add API keys in template.env and change its name to .env
 ```
@@ -265,7 +268,7 @@ OPENAI_API_KEY = ""  # for OpenAI LLM backend
 
 ### 🔎 Choices Overview
 - Available memories: ***Empty, ChatDev, MetaGPT, Voyager, Generative, MemoryBank, G-Memory***
-- Added by this fork: ***nine intrinsic memory variants*** — `intrinsicmemory-notemplate`, `-pddl`, `-fever`, `-hotpotqa`, `-jericho`, `-babyai`, `-sciworld`, `-alfworld` and `-llm-structured-template`. Each keeps one agent-authored memory that an LLM rewrites as the episode goes; they differ only in the template their system prompt asks for, which is what the experiments compare.
+- Added by this fork: ***ten intrinsic memory variants*** — `intrinsicmemory-notemplate`, `-pddl`, `-fever`, `-hotpotqa`, `-jericho`, `-babyai`, `-sciworld`, `-alfworld`, `-swebench` and `-llm-structured-template`. Each keeps one agent-authored memory that an LLM rewrites as the episode goes; they differ only in the template their system prompt asks for, which is what the experiments compare.
 - Available MAS: ***AutoGen, DyLAN, MacNet***
 - `--mas_type autogen` also takes `--use_validator`, which adds a third agent reviewing the solver's action format.
 

@@ -41,6 +41,7 @@ SMOKE_TASK_CONFIGS = {
     "jericho": {**TASK_CONFIGS["jericho"]},
     "pddl": {**TASK_CONFIGS["pddl"]},
     "sciworld": {**TASK_CONFIGS["sciworld"]},
+    "swebench": {**TASK_CONFIGS["swebench"]},
 }
 
 

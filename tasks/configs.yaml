@@ -45,6 +45,16 @@ pddl:
   max_steps: 30
   few_shots_num: 1
 
+swebench:
+  env_config_path: tasks/env_configs/swebench_config.yaml
+  max_steps: 30
+  few_shots_num: 1
+  # One instance is one 2.5 GB image that has to be built on Isambard first, so
+  # the dataset a run covers is bounded by what has been built. The manifest
+  # spreads its four repositories evenly, so this prefix is a proportional
+  # sample of them. See the SWE-bench section of data/data.md.
+  max_tasks: 20
+
 # MAS configs. Looked up by --mas_type, so `graph` below is never read: MacNet's
 # mas_type is `macnet`.
 autogen:

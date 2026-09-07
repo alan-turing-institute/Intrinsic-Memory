@@ -1,0 +1,12 @@
+task_repo: ~/swebench-arm64/swe-bench-tasks
+image_template: localhost/sweb.eval.arm64.{instance}:latest
+runtime: podman-hpc
+# Where the instance images were migrated to, which is what podman-hpc reads
+# them from. containers/isambard.md builds them here.
+squash_dir: ~/GMemory/swebench-images
+setup_command: source /opt/miniconda3/bin/activate testbed
+workdir: /testbed
+command_timeout: 120
+eval_timeout: 1800
+start_timeout: 300
+max_output_chars: 3000

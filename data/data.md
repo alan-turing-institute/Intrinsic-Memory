@@ -155,3 +155,111 @@ The 10 tasks the oracle does not solve are all `PutNextS5N2Carrying`, where the
 agent starts already holding something and the bot asserts it is empty-handed.
 The level itself is solvable - dropping first and then handing over to the bot
 completes it - so this is a limitation of the measurement, not of the task.
+
+## SWE-bench
+
+One task is one SWE-bench Verified instance: a repository at the commit before an
+issue was fixed, the issue text, and the tests the fix has to make pass. Three
+things are needed, and only the first is in this repository:
+
+- `data/swebench/verified.jsonl` — the manifest, an instance id and its
+  repository per row.
+- the task repository, cloned separately, which holds each instance's issue
+  text, tests and `eval.sh`.
+- one container image per instance, built for aarch64 on Isambard.
+
+Both of the latter are `containers/isambard.md`.
+
+### What the manifest names, and what it leaves out
+
+Verified is 500 instances across 12 repositories. The manifest holds the 333
+from the four whose images build on aarch64 — django (231), sympy (75), pytest
+(19) and requests (8). The exclusion is a build fact rather than a sampling
+choice: `pydata__xarray-7229` pins the CDAT stack, which has no linux-aarch64
+build in any channel, and that is the shape of the failure to expect.
+
+The rows are ordered so that each repository is spread evenly through the file —
+each instance sits at its fractional position through its own repository's
+instances — which makes any prefix a proportional sample of the four rather than
+231 django instances followed by everything else. `max_tasks` for swebench is 20,
+because 20 instances is 20 images and about 50 GB.
+
+Regenerating it needs the Verified instance list, which is the dataset's own
+row order:
+
+```
+for off in 0 100 200 300 400; do
+  curl -s "https://datasets-server.huggingface.co/rows?dataset=SWE-bench%2FSWE-bench_Verified&config=default&split=test&offset=$off&length=100" \
+    | jq -r '.rows[].row | [.instance_id, .repo] | @tsv'
+done > verified.tsv
+```
+
+then, keeping the four repositories and spreading them:
+
+```
+python - <<'EOF' > swebench/verified.jsonl
+import json
+BUILDS = {'django/django', 'sympy/sympy', 'pytest-dev/pytest', 'psf/requests'}
+by_repo = {}
+for line in open('verified.tsv'):
+    instance, repo = line.split('\t')[:2]
+    if repo in BUILDS:
+        by_repo.setdefault(repo, []).append(instance)
+for instances in by_repo.values():
+    instances.sort()
+for _position, repo, instance in sorted(
+    ((rank + 0.5) / len(instances), repo, instance)
+    for repo, instances in sorted(by_repo.items())
+    for rank, instance in enumerate(instances)
+):
+    print(json.dumps({'id': instance, 'repo': repo}))
+EOF
+```
+
+### The reward is a ladder, not a fraction
+
+The median Verified instance has one FAIL_TO_PASS test (mean 3.0, max 438), so
+scoring the fraction of target tests passing would be binary in practice and
+would score nothing for the work of getting as far as a patch that runs. The
+rungs are in `tasks/envs/swebench_grading.py`:
+
+| reward | what the episode reached |
+|---|---|
+| 0.0 | the repository is unchanged |
+| 0.25 | a non-empty diff, but its tests could not be run |
+| 0.5 | the tests ran, and either none of the target tests pass or something regressed |
+| 0.5–0.75 | the tests ran and some of the target tests pass |
+| 1.0 | resolved: every target test passes and nothing that passed before regressed |
+
+PASS_TO_PASS is a gate rather than a deduction: a patch that makes the target
+test pass by breaking tests that passed before is not a fix, and SWE-bench scores
+it unresolved. `done` is reserved for `resolved`, as Jericho reserves it for
+victory.
+
+The verdict is read per test name against the instance's `tests.json`, never off
+the summary line. `eval.sh` runs whole test files, which can hold tests that are
+not graded: on `psf__requests-2931` both the patched and the unpatched run report
+81 errors, all of them tests wanting a live httpbin and none of them graded.
+
+Each repository's runner prints its own status lines, and `task.yaml` names the
+parser SWE-bench itself grades with. Three formats cover the four repositories:
+unittest's verbose output (django), pytest's `-rA` summary (pytest, requests) and
+sympy's own runner. An instance naming any other parser raises rather than
+scoring zero, which is what a fifth repository will do the day its images build.
+
+### The trial budget
+
+`max_steps` is 30, the same as every dataset except Jericho, and it is not
+calibrated. Jericho's 100 came from walking each game's own walkthrough; the
+equivalent here is replaying a known-good sequence of shell commands per
+instance and recording the reward reached at each budget, which has not been
+done. 30 turns is enough to read a file, edit it and run one test file, and
+prompt tokens grow with the square of the budget.
+
+### Two things the agent can see that a benchmark run might not want it to
+
+- The container's git history is the repository's, so the commit that fixed the
+  issue is reachable with `git log --all` in some images. SWE-bench's own harness
+  has the same property.
+- Nothing from the task directory is mounted, so `gold.patch` and `test.patch`
+  are not in the container. Grading hands `eval.sh` to `bash -c` instead.

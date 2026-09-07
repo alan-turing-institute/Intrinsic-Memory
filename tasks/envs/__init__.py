@@ -7,6 +7,7 @@ from .base_env import BaseEnv, BaseRecorder
 from .alfworld_env import AlfworldEnv, AlfworldRecorder, get_env_name_from_gamefile, prefixes
 from .babyai_env import BabyAIEnv, BabyAIRecorder
 from .sciworld_env import SciworldEnv, SciworldRecorder, build_simplification_str
+from .swebench_env import SWEBenchEnv, SWEBenchRecorder
 from .fever_env import FeverEnv, FeverRecorder
 from .hotpotqa_env import HotpotQAEnv, HotpotQARecorder
 from .jericho_env import JerichoEnv, JerichoRecorder
@@ -20,6 +21,7 @@ TASKS_PATH = {
     'jericho': repo_path('data/jericho/jericho_games.jsonl'),
     'pddl': repo_path('data/pddl/test.jsonl'),
     'sciworld': repo_path('data/sciworld/test.jsonl'),
+    'swebench': repo_path('data/swebench/verified.jsonl'),
 }
 
 PDDL_DOMAINS = ["barman", "blockworld", "gripper", "tyreworld"]
@@ -109,6 +111,21 @@ def load_jericho_tasks() -> list[dict]:
         ]
 
 
+def load_swebench_tasks() -> list[dict]:
+    """One task per instance. The instance's image is not in the repo, and nor is
+    the task repository the issue and the tests are read from; see
+    containers/isambard.md."""
+    with open(TASKS_PATH['swebench'], 'r') as reader:
+        return [
+            {
+                'id': row['id'],
+                'repo': row['repo'],
+                'env_name': 'swebench',
+            }
+            for row in (json.loads(line) for line in reader)
+        ]
+
+
 def load_pddl_tasks() -> list[dict]:
     return get_all_environment_configs(PDDL_DOMAINS, TASKS_PATH['pddl'])
 
@@ -121,6 +138,7 @@ TASK_LOADERS = {
     'hotpotqa': load_hotpotqa_tasks,
     'jericho': load_jericho_tasks,
     'pddl': load_pddl_tasks,
+    'swebench': load_swebench_tasks,
 }
 
 ENVS = {
@@ -130,7 +148,8 @@ ENVS = {
     'fever': FeverEnv,
     'hotpotqa': HotpotQAEnv,
     'jericho': JerichoEnv,
-    'pddl': PDDLEnv
+    'pddl': PDDLEnv,
+    'swebench': SWEBenchEnv,
 }
 
 RECORDERS = {
@@ -140,7 +159,8 @@ RECORDERS = {
     'fever': FeverRecorder,
     'hotpotqa': HotpotQARecorder,
     'jericho': JerichoRecorder,
-    'pddl': PDDLRecorder
+    'pddl': PDDLRecorder,
+    'swebench': SWEBenchRecorder,
 }
 
 _datasets: dict[str, list[dict]] = {}

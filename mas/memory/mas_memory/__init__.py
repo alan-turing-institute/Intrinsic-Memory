@@ -15,6 +15,7 @@ from .intrinsicmemory import (
     IntrinsicMASMemoryNoTemplate,
     IntrinsicMASMemoryPDDL,
     IntrinsicMASMemorySCIWORLD,
+    IntrinsicMASMemorySWEBENCH,
 )
 from .intrinsicmemory_llm_structured_template import IntrinsicMASMemoryLLMTemplate
 
@@ -36,6 +37,7 @@ __all__ = [
     'IntrinsicMASMemoryJERICHO',
     'IntrinsicMASMemoryALFWORLD',
     'IntrinsicMASMemorySCIWORLD',
+    'IntrinsicMASMemorySWEBENCH',
     'IntrinsicMASMemory'
 
 ]

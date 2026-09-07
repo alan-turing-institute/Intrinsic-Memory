@@ -4,6 +4,7 @@ from .sciworld_prompt import sciworld_solver_system_prompt, sciworld_few_shots
 from .fever_prompt import fever_solver_system_prompt, fever_few_shots
 from .hotpotqa_prompt import hotpotqa_solver_system_prompt, hotpotqa_few_shots
 from .jericho_prompt import jericho_solver_system_prompt, jericho_few_shots
+from .swebench_prompt import swebench_solver_system_prompt, swebench_few_shots
 from .pddl_prompt import pddl_prompts
 
 # Appended to every dataset's system prompt, so that what the agent is told about
@@ -25,6 +26,7 @@ def get_dataset_system_prompt(task: str, task_config: dict) -> str:
         'fever': fever_solver_system_prompt,
         'hotpotqa': hotpotqa_solver_system_prompt,
         'jericho': jericho_solver_system_prompt,
+        'swebench': swebench_solver_system_prompt,
         'pddl': pddl_prompts
     }
 
@@ -52,6 +54,9 @@ def get_task_few_shots(dataset: str, task_config: dict, few_shots_num: int) -> l
 
     elif dataset == 'jericho':
         return jericho_few_shots[:few_shots_num]
+
+    elif dataset == 'swebench':
+        return swebench_few_shots[:few_shots_num]
 
     elif dataset == 'sciworld':
         return sciworld_few_shots[:few_shots_num]

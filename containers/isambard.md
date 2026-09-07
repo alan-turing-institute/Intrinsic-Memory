@@ -21,16 +21,41 @@ and `swebench_build.sbatch` runs that as a job.
 `loginctl enable-linger` is denied for user accounts, so logind kills every user
 process when the last session closes — a `setsid --fork` build and a tmux
 session were both killed mid-build. Compute nodes have outbound network and
-`podman-hpc`, and `podman-hpc migrate` writes to `$SCRATCH`, so a batch job can
-do the whole thing and outlive the session that submitted it.
+`podman-hpc`, and `podman-hpc migrate` writes to a shared filesystem, so a batch
+job can do the whole thing and outlive the session that submitted it.
 
 ```bash
 cd ~/swebench-arm64
 sbatch containers/swebench_build.sbatch django__django-16485
+
+# or a whole set, one array task per instance
+cut -d'"' -f4 <repo>/data/swebench/verified.jsonl | head -20 > instances.txt
+sbatch --array=0-19 containers/swebench_build.sbatch instances.txt
 ```
 
 A login-node build works only while you stay logged in, which is fine for
 watching one build and useless for a queue of them.
+
+## Where the images are kept
+
+`podman-hpc` reads migrated images from `$SQUASH_DIR`. The build script and the
+build job both set it to `~/GMemory/swebench-images`, and
+`tasks/env_configs/swebench_config.yaml` names the same directory, so an
+experiment finds the images rather than rebuilding them on whatever node it
+lands on. An instance already migrated there is skipped outright, so a
+resubmitted array job costs nothing for the images it already has.
+
+Two things to check on a new system, because a wrong store is silent — the run
+just fails to find an image:
+
+```bash
+podman-hpc infohpc                                        # what the wrapper thinks the squash dir is
+SQUASH_DIR=~/GMemory/swebench-images podman-hpc images    # R/O = true for what is there
+```
+
+An instance image is 2.3–2.6 GB, so 20 instances is about 50 GB of `$HOME`.
+`build_swebench_image.sh` fails rather than reporting success if `migrate` left
+no read-only image behind.
 
 ## One-time setup
 
@@ -76,6 +101,33 @@ filesystem-specific options applied
 directive is ignored for heredocs, so `set -euo pipefail` still reaches
 `/bin/sh` and dies on `Illegal option -o pipefail`. Heredocs with no shebang
 build fine and are left alone.
+
+## How an episode uses an image
+
+`tasks/envs/swebench_env.py` starts one container per task, runs each of the
+agent's commands as its own `podman-hpc exec` in it, and grades the episode by
+running the instance's `eval.sh` inside it at the end. Three things about that
+are deliberate:
+
+- **Nothing from the task directory is mounted.** `eval.sh` carries the test
+  patch inline, so it can be handed to `bash -c` at grading time; mounting the
+  directory would put `gold.patch` in the container with the agent.
+- **Each command is its own `exec`, not a line fed to one persistent shell.** A
+  command that hangs then costs one trial rather than the episode: the agent's
+  edits are in the container's filesystem, not in the shell that timed out. The
+  working directory is carried between commands explicitly, through a marker
+  printed from an EXIT trap; exported variables are not.
+- **A container per worker.** The name carries the worker's pid, and grading
+  removes the container.
+
+The suite stubs the runtime, so none of that is covered offline. What found the
+one bug in it was running it: a stub `podman-hpc` whose `exec` runs bash locally,
+over a real git repository with a failing test and an `eval.sh` in the shape
+SWE-bench uses. `subprocess.run(capture_output=True)` keeps stdout and stderr
+apart, and `eval.sh`'s `>>>>> Start Test Output` markers are xtrace lines on
+stderr while unittest prints to stderr and pytest to stdout - so concatenating
+the two streams left a bracketed section with no test output in it and every
+episode graded 0.25. stderr is merged into stdout instead.
 
 ## Checking an image is a faithful instance
 
@@ -126,8 +178,14 @@ which is the issue the instance is about, and the second run ends `Ran 10 tests
   for this architecture — and the answer is to pick another instance rather than
   fight it. django alone is 231 of the 500 Verified instances.
 - **A login node's local image store is erased at the end of a session.** The
-  migrated squashfs on `$SCRATCH` is what survives, and what compute nodes read;
-  `podman-hpc images` shows `R/O = true` for those.
+  migrated squashfs under `$SQUASH_DIR` is what survives, and what compute nodes
+  read; `podman-hpc images` shows `R/O = true` for those.
+- **Every worker of a sweep needs a container of its own.** `SWEBenchEnv` names
+  each one after the instance and the worker's pid. The squashfs image is
+  read-only and shared, so the images cost one copy however many workers run,
+  but each container's writable layer is its own and holds whatever the agent
+  and `pip install -e .` write - and that layer is in the node's local podman
+  storage, not in `$SQUASH_DIR`.
 - **The login node rate-limits reconnections.** A poll loop that opens an ssh
   connection every 30 seconds gets `Connection reset by peer`. Reuse one
   connection (`ControlMaster`/`ControlPersist`) and poll minutes apart.

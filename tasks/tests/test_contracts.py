@@ -42,6 +42,7 @@ TASK_CONFIGS = {
     "jericho": {"id": "detective"},
     "pddl": {"game_name": "blockworld"},
     "sciworld": {},
+    "swebench": {"id": "django__django-16485", "repo": "django/django"},
 }
 
 
@@ -321,6 +322,7 @@ THOUGHT_VOCABULARY = {
     "pddl": ("think: I should stack the blocks.", "stack block_a block_b"),
     "fever": ("Thought 1: I need to search Telemundo.", "Search[Telemundo]"),
     "hotpotqa": ("Thought 1: I need to search Milhouse.", "Lookup[named after]"),
+    "swebench": ("think: the traceback names defaultfilters.py.", "ls tests"),
 }
 
 
