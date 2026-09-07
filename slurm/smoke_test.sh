@@ -53,6 +53,13 @@ else
   echo "unwritable on $(hostname), falling back to ${TMPDIR}"
 fi
 
+# vLLM asks for four GPUs by tensor_parallel_size, and a step that cannot see
+# four fails inside torch as `device >= 0 && device < num_gpus INTERNAL ASSERT
+# FAILED`, which names neither the count nor the step. Count them first.
+echo -n "gpus visible to a step: "
+srun --nodes=1 --gpus=${SLURM_GPUS} --ntasks-per-node 1 \
+  bash -c 'nvidia-smi -L 2>/dev/null | wc -l' 2>/dev/null || echo "could not launch a step"
+
 cd ~/vllm_test
 source .venv/bin/activate
 
