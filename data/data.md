@@ -1,16 +1,71 @@
 # Dataset
 ## ALFWorld
 
-For the tasks suffix json
+The manifest, 134 tasks, is checked in as `data/alfworld/alfworld_tasks_suffix.json`:
+
 ```
 curl -o alfworld_tasks_suffix.json https://raw.githubusercontent.com/LeapLabTHU/ExpeL/e41ec9a24823e7b560c561ab191441b56d9bcefc/data/alfworld/alfworld_tasks_suffix.json
 ```
 
-For PPDL and game files
+Every row of it names the game file to play, so the games are the only other
+download. The archive unpacks to `json_2.1.1/{train,valid_seen,valid_train,valid_unseen}`,
+4027 games in all, which is the path the manifest and `tasks/env_configs/alfworld_config.yaml`
+both expect - run it from `data/alfworld`:
 
 ```
 curl -L -o alfworld.zip https://github.com/alfworld/alfworld/releases/download/0.4.2/json_2.1.3_tw-pddl.zip
+unzip -q alfworld.zip && rm alfworld.zip
 ```
+
+Those are `game.tw-pddl` files and nothing else. The rest of ALFRED is not needed:
+`AlfredTWEnv.collect_game_files` would want a `traj_data.json` beside each game and
+reports `0 games` without one, but `AlfworldEnv.set_env` assigns `game_files` from
+the manifest, so the collected split is never what gets played. The handcoded
+expert does read `traj_data.json` - it is only attached to the `train` split, and
+the experiments run `eval_out_of_distribution`.
+
+### The simulator
+
+`alfworld` is in neither `pyproject.toml` nor `requirements.txt`: both its
+compiled dependencies lack an aarch64 wheel, so `uv sync` would fail on Isambard
+and on any other Arm machine. Install it separately. On x86_64 that is the whole
+of it:
+
+```bash
+uv pip install alfworld
+```
+
+On aarch64, two things fail.
+
+**TextWorld** builds from its sdist, and `setup.sh` unpacks
+`inform7-compilers_6M62_$(uname -m).tar.gz`. Inform 7 6M62 ships `i386`,
+`x86_64`, `ppc` and `armv6lhf` - no `aarch64`, and `armv6lhf` is 32-bit ARM,
+which Neoverse-V2 cannot run. Inform is the compiler for *authoring* a game;
+playing a pre-generated `.tw-pddl` goes through the PDDL engine and never calls
+it, so let that step fail:
+
+```bash
+curl -sLO https://files.pythonhosted.org/packages/source/t/textworld/textworld-1.7.0.tar.gz
+tar xzf textworld-1.7.0.tar.gz
+sed -i '/inform7-\(compilers\|interpreters\)_6M62_/ s/$/ || true/' textworld-1.7.0/setup.sh
+
+uv pip install setuptools wheel Cython numpy
+uv pip install --no-build-isolation ./textworld-1.7.0
+uv pip install --no-deps alfworld
+```
+
+**fast-downward-textworld**, the PDDL planner behind `textworld[pddl]`, compiles
+the whole planner with CMake. On a login node that ends in `g++: internal
+compiler error: Killed (program cc1plus)` - the OOM killer, not the
+architecture - so build it on a compute node:
+
+```bash
+srun --nodes=1 --gpus=1 --time=00:30:00 \
+  uv pip install --no-build-isolation fast-downward-textworld==20.6.4
+```
+
+Then check the whole path with `TASK=alfworld sbatch slurm/smoke_test.sh`, which
+prints the simulator version and the number of games it can see before it runs.
 
 ## PDDL
 

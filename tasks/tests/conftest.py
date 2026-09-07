@@ -141,6 +141,12 @@ _stub_wikipedia()
 # finch-clust's whole public surface is one function.
 _stub_module_exporting("finch", "FINCH")
 
+# ALFWorld reaches the code through one factory. The parent packages are stubbed
+# too because `from alfworld.agents.environment import ...` walks the whole path.
+_stub_module_exporting("alfworld", "agents")
+_stub_module_exporting("alfworld.agents", "environment")
+_stub_module_exporting("alfworld.agents.environment", "get_environment")
+
 
 # ── output logging ────────────────────────────────────────────────────────────
 

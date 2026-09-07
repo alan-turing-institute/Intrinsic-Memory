@@ -240,7 +240,6 @@ select = ["E4", "E7", "E9", "F"]
 "mas/memory/mas_memory/memorybank.py" = ["E712"]
 "mas/memory/mas_memory/metagpt.py" = ["E712"]
 "mas/memory/mas_memory/voyager.py" = ["E712"]
-"tasks/envs/alfworld_env.py" = ["E712"]
 "mas/memory/mas_memory/GMemory.py" = ["E712", "E722"]  # E722: bare except, Phase 3
 
 # Star imports in the re-export shims and their consumers. Phase 5.

@@ -53,20 +53,21 @@ az deployment group create --resource-group intrinsic-memory --template-file tem
 Slurm job scripts for running experiments on an HPC cluster (developed against the BriCS/Isambard-AI environment) live in `slurm/`. They follow two patterns:
 
 **Self-contained: serve a model + run experiments in one job**
-`slurm/babyai_experiment.sh`, `slurm/fever_experiment.sh`, `slurm/hotpotqa_experiment.sh`, `slurm/jericho_experiment.sh`, `slurm/pddl_experiment.sh`, `slurm/sciworld_experiment.sh`, `slurm/single_node_serve.sh`
+`slurm/alfworld_experiment.sh`, `slurm/babyai_experiment.sh`, `slurm/fever_experiment.sh`, `slurm/hotpotqa_experiment.sh`, `slurm/jericho_experiment.sh`, `slurm/pddl_experiment.sh`, `slurm/sciworld_experiment.sh`, `slurm/single_node_serve.sh`
 
 Each of these scripts:
 1. Requests a node with 4 GPUs (`#SBATCH --gpus=4 --exclusive`) and loads cluster modules (`module load brics/nccl`).
 2. Starts a local `vllm serve` process in the background for a model (default `openai/gpt-oss-120b`), polling `/health` until it's ready.
-3. Points `OPENAI_API_BASE` at the local vLLM server (`http://localhost:8000/v1`) and runs `uv run tasks/run.py`, sweeping over every memory module and 10 seeds for one task (babyai/fever/hotpotqa/jericho/pddl/sciworld) or fever, pddl and sciworld at once (`single_node_serve.sh`).
+3. Points `OPENAI_API_BASE` at the local vLLM server (`http://localhost:8000/v1`) and runs `uv run tasks/run.py`, sweeping over every memory module and 10 seeds for one task (alfworld/babyai/fever/hotpotqa/jericho/pddl/sciworld) or fever, pddl and sciworld at once (`single_node_serve.sh`).
 4. Kills the vLLM process once `run.py` finishes.
 
-Alongside the six is one `slurm/crosstask.sh`: every dataset's intrinsic modules again, run with `--intrinsic_cross_task` so the memory is kept across the tasks of the dataset instead of starting each task from nothing. It gives each dataset its own `tasks/run.py`, concurrently against the one server, because the sweep is a Cartesian product and a single call over every dataset would pair each with every other dataset's hand-written template. Point it at the same results directory as the six — the two arms are told apart by the `intrinsic_cross_task` column, not by the file they land in.
+Alongside the seven is one `slurm/crosstask.sh`: every dataset's intrinsic modules again, run with `--intrinsic_cross_task` so the memory is kept across the tasks of the dataset instead of starting each task from nothing. It gives each dataset its own `tasks/run.py`, concurrently against the one server, because the sweep is a Cartesian product and a single call over every dataset would pair each with every other dataset's hand-written template. Point it at the same results directory as the seven — the two arms are told apart by the `intrinsic_cross_task` column, not by the file they land in.
 
 The datasets do not cost the same, so the starting token budget is per dataset in `slurm/generate_slurm.py` (`MAX_TOKENS_OVERRIDES`, with `DEFAULT_MAX_TOKENS` for the rest). `TIME_LIMIT` and `MAX_NUM_SEQS` are one value for every job. Edit the generator and rerun it; the scripts themselves are gitignored.
 
 ```bash
 export DB_DIR=/projects/<project>/results/experiment-2026-09
+sbatch slurm/alfworld_experiment.sh   # 10 arms x 10 seeds
 sbatch slurm/babyai_experiment.sh     # 10 arms x 10 seeds
 sbatch slurm/fever_experiment.sh      # 10 arms x 10 seeds
 sbatch slurm/hotpotqa_experiment.sh   # 10 arms x 10 seeds
@@ -79,7 +80,13 @@ sbatch slurm/crosstask.sh             # every dataset's 3 intrinsic arms, cross-
 `DB_DIR` defaults to `$HOME/GMemory/.db-experiment`, and every script echoes where it is writing. Use a directory no earlier run wrote to: a run refuses to append to a results file whose header is not its schema.
 
 **Check the whole path in half an hour first**
-`slurm/smoke_test.sh` has the same shape as those - serve, then run - but for one task, two memory modules, one seed and two tasks of the dataset (`--max_tasks 2 --max_trials 3`). It then prints what the run wrote and fails if the two result rows are not there — including a wrong `--model`, which otherwise fails once per experiment rather than once. It also probes whether the filesystem grants `flock`, which is what the results file's append lock needs. Worth a submission before any 24-hour job, and after any change to the cluster, the model or the environment.
+`slurm/smoke_test.sh` has the same shape as those - serve, then run - but for one task, two memory modules, one seed and two tasks of the dataset (`--max_tasks 2 --max_trials 3`). It then prints what the run wrote and fails if the two result rows are not there — including a wrong `--model`, which otherwise fails once per experiment rather than once. It also probes whether the filesystem grants `flock`, which is what the results file's append lock needs, whether Wikipedia answers, whether `java` is on `PATH` for ScienceWorld, and whether ALFWorld's simulator and games are installed. Worth a submission before any 24-hour job, and after any change to the cluster, the model or the environment.
+
+`TASK` picks the dataset (default `fever`) and `VENV` the environment, so a dataset whose simulator is not in the shared `.venv` can be checked against one of its own without disturbing a job already queued against it:
+
+```bash
+TASK=alfworld VENV=~/alfworld-test-venv sbatch slurm/smoke_test.sh
+```
 
 **Size the real jobs before submitting them**
 `slurm/calibrate.sh` sits between the smoke test and a 24-hour job: one dataset, every arm, one seed, twenty tasks at the full trial budget, in a 2-hour allocation. It prints the result table, the tokens per task and any failed tasks. That is what sizes the real jobs — every experiment in a job runs concurrently against one throughput-bound server, so the wall clock is total tokens divided by what the server sustains, and `tokens_per_task x episodes / throughput` is the estimate. Twenty tasks also takes `g-memory` past its twentieth, where `merge_insights` runs.
@@ -212,6 +219,8 @@ pip install -r requirements.txt
 
 `requirements.txt` and `pyproject.toml` carry the same pins by hand; neither is generated from the other yet.
 
+ALFWorld's simulator is in neither of them: TextWorld and its PDDL planner have no aarch64 wheels, so listing `alfworld` would break `uv sync` on Isambard and on every other Arm machine. It installs separately, and on aarch64 needs two extra steps — the ALFWorld section of `data/data.md` has both.
+
 ### ✅ Tests and lint
 
 The test suite runs offline — it stubs the simulators, the vector store and the LLM — in a dev environment without CUDA:
@@ -237,6 +246,8 @@ The file structure should be organized as follows:
 data
 └── alfworld
     └── alfworld_tasks_suffix.json
+    └── json_2.1.1
+        └── valid_unseen/.../game.tw-pddl   # 4027 games, downloaded separately
 └── pddl
     └── test.jsonl
 └── fever
@@ -257,7 +268,7 @@ Each dataset is parsed only when a task asks for it, so a FEVER-only run does no
 
 FEVER and HotpotQA both drive live Wikipedia through their `Search` and `Lookup` actions, so those two need outbound network from wherever the run happens; the other five are self-contained once their simulator is installed.
 
-The two manifests added by this fork are checked in, but the data they name is not. Jericho's manifest lists 56 games and needs the rom files themselves under `data/jericho/roms/`; `data/data.md` has the command. BabyAI needs no download at all — `minigrid` generates each gridworld from the level name and seed in the manifest.
+The manifests are checked in, but the data they name is not. Jericho's lists 56 games and needs the rom files themselves under `data/jericho/roms/`; ALFWorld's names a `.tw-pddl` game file per task and needs those under `data/alfworld/json_2.1.1/`. `data/data.md` has both commands. BabyAI needs no download at all — `minigrid` generates each gridworld from the level name and seed in the manifest.
 
 ### 🔑 Add API keys in template.env and change its name to .env
 ```
