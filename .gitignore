@@ -5,6 +5,7 @@
 # cache
 __pycache__
 .db*
+.smoke-test
 ._data
 .swp
 

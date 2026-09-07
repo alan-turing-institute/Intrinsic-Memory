@@ -37,6 +37,22 @@ DB_DIR=./.db/smoke-${TASK}-${SLURM_JOB_ID:-local}
 
 export TIKTOKEN_ENCODINGS_BASE="/projects/public/brics/distributed_vllm/etc/encodings"
 
+# The per-user node-local scratch that TMPDIR names is created by the job prolog.
+# A node where that failed leaves TMPDIR naming a directory nothing can write, and
+# vLLM reports it as a PermissionError from a worker rather than as a bad node.
+echo -n "TMPDIR: "
+if mkdir -p "${TMPDIR:-/tmp}" 2>/dev/null && touch "${TMPDIR:-/tmp}/.probe" 2>/dev/null; then
+  rm -f "${TMPDIR:-/tmp}/.probe"
+  echo "${TMPDIR:-/tmp}"
+else
+  # Under the checkout, not /tmp: it is the one directory the job is certain to
+  # be able to write. It is also the shared filesystem, so this is the slow
+  # path, taken only on a node whose own scratch is missing.
+  export TMPDIR="${HOME}/GMemory/.smoke-test/${TASK}-${SLURM_JOB_ID:-local}"
+  mkdir -p "${TMPDIR}"
+  echo "unwritable on $(hostname), falling back to ${TMPDIR}"
+fi
+
 cd ~/vllm_test
 source .venv/bin/activate
 
