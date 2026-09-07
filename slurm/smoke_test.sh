@@ -120,7 +120,9 @@ echo -n "java: "; java -version 2>&1 | head -1 || echo "absent - sciworld will n
 # ALFWorld plays a .tw-pddl game file per task, and neither its simulator nor the
 # games are installed by `uv sync`; see the ALFWorld section of data/data.md.
 echo -n "alfworld: "
-uv run --no-sync python -c 'import alfworld, textworld; print("simulator", alfworld.__version__)' \
+uv run --no-sync python -c 'import textworld, fast_downward
+from alfworld.info import __version__
+print("alfworld", __version__, "textworld", textworld.__version__)' \
   2>&1 | tail -1 || echo "absent - alfworld will not start"
 echo -n "alfworld games: "
 find data/alfworld -name 'game.tw-pddl' 2>/dev/null | wc -l
