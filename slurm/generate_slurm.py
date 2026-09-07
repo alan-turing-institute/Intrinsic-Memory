@@ -5,7 +5,14 @@ The generated scripts are not committed; this generator is. Edit the constants
 below and rerun to produce a new sweep:
 
     uv run slurm/generate_slurm.py
+
+The calibration runs that size these jobs are slurm/generate_calibration.py,
+which builds its scripts from the cluster configuration and the job pieces here.
+
+Set SLURM_ACCOUNT to name an account in the generated scripts; without it they
+submit under the user's default.
 """
+import os
 from pathlib import Path
 
 SLURM_DIR = Path(__file__).parent
@@ -58,6 +65,9 @@ TIME_LIMIT = "24:00:00"
 PORT = 8000
 VLLM_STARTUP_SLEEP = 100
 
+# Named at generation time rather than committed: it is one user's allocation.
+ACCOUNT = os.environ.get("SLURM_ACCOUNT")
+
 # These three override the shared GPT-OSS_Hopper.yaml, which sets them to 8192,
 # 10240 and off.
 #
@@ -78,6 +88,18 @@ OMP_NUM_THREADS = 2
 
 def intrinsic_memory_for(task: str) -> str:
     return f"intrinsicmemory-{task}"
+
+
+def intrinsic_arms(task: str) -> list[str]:
+    return [INTRINSIC_ABLATIONS[0], intrinsic_memory_for(task), INTRINSIC_ABLATIONS[1]]
+
+
+def every_arm(task: str) -> list[str]:
+    return BASELINE_MEMORIES + intrinsic_arms(task)
+
+
+def account_directive() -> str:
+    return f"#SBATCH --account={ACCOUNT}\n" if ACCOUNT else ""
 
 
 def vllm_serve_block() -> str:
@@ -123,7 +145,7 @@ deactivate"""
 
 
 def run_command(task: str, memories: list[str], cross_task: bool,
-                background: bool = False) -> str:
+                background: bool = False, seeds: list[int] = SEEDS, scope: str = "") -> str:
     """One `tasks/run.py` invocation, for one dataset and its arms.
 
     A backgrounded one records its own pid: a bare `wait` would also wait on the
@@ -136,19 +158,20 @@ def run_command(task: str, memories: list[str], cross_task: bool,
 \t--task {task} \\
 \t--mas_type autogen \\
 \t--mas_memory {" ".join(memories)} \\
-\t--seed {" ".join(str(seed) for seed in SEEDS)} \\{flag}
+\t--seed {" ".join(str(seed) for seed in seeds)} \\{flag}{scope}
 \t--db_dir ${{DB_DIR}} \\
 \t--model ${{MODEL_NAME}} \\
 \t--max_tokens {MAX_TOKENS_OVERRIDES.get(task, DEFAULT_MAX_TOKENS)}{trailing}"""
 
 
-def preamble(job_name: str, output_pattern: str, script_name: str) -> str:
+def preamble(job_name: str, output_pattern: str, script_name: str,
+             time_limit: str = TIME_LIMIT, db_dir: str = DEFAULT_DB_DIR) -> str:
     """Everything before the run: the allocation, the server, the environment."""
     return f"""#!/bin/bash
-#SBATCH --job-name={job_name}
+{account_directive()}#SBATCH --job-name={job_name}
 #SBATCH --nodes={NODES}
 #SBATCH --gpus={GPUS}
-#SBATCH --time={TIME_LIMIT}
+#SBATCH --time={time_limit}
 #SBATCH --exclusive
 #SBATCH --output={output_pattern}
 
@@ -161,7 +184,7 @@ module list
 # Every job of one experiment set must point at the same directory: they append to
 # one overall_results.csv under a lock on the file. Override at submit time with
 #   DB_DIR=/projects/<project>/results/experiment-2026-09 sbatch slurm/{script_name}
-DB_DIR=${{DB_DIR:-{DEFAULT_DB_DIR}}}
+DB_DIR=${{DB_DIR:-{db_dir}}}
 
 {vllm_serve_block()}
 
@@ -188,14 +211,10 @@ wait $VLLM_PID 2>/dev/null
 
 
 def render_experiment(task: str) -> str:
-    memories = BASELINE_MEMORIES + [
-        INTRINSIC_ABLATIONS[0], intrinsic_memory_for(task), INTRINSIC_ABLATIONS[1]
-    ]
-
     return (
         preamble(f"vllm-{task}", f"out/{task}-%x.%j.%t.out", f"{task}_experiment.sh")
         + "\n"
-        + run_command(task, memories, cross_task=False)
+        + run_command(task, every_arm(task), cross_task=False)
         + CLEANUP
     )
 
@@ -210,12 +229,7 @@ def render_crosstask() -> str:
     jobs safe.
     """
     runs = "\n\n".join(
-        run_command(
-            task,
-            [INTRINSIC_ABLATIONS[0], intrinsic_memory_for(task), INTRINSIC_ABLATIONS[1]],
-            cross_task=True,
-            background=True,
-        )
+        run_command(task, intrinsic_arms(task), cross_task=True, background=True)
         for task in TASKS
     )
 
@@ -236,15 +250,19 @@ RUN_PIDS=()
     )
 
 
+def write_script(script_name: str, body: str) -> None:
+    path = SLURM_DIR / script_name
+    path.write_text(body)
+    path.chmod(0o755)
+    print(f"wrote {path}")
+
+
 def main() -> None:
     scripts = {f"{task}_experiment.sh": render_experiment(task) for task in TASKS}
     scripts["crosstask.sh"] = render_crosstask()
 
     for script_name, body in scripts.items():
-        path = SLURM_DIR / script_name
-        path.write_text(body)
-        path.chmod(0o755)
-        print(f"wrote {path}")
+        write_script(script_name, body)
 
 
 if __name__ == "__main__":
