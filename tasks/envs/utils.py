@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Optional, Union
 import logging
 import random
@@ -7,6 +8,10 @@ import time
 
 from langchain_core.documents import Document
 import wikipedia
+
+from mas.utils import repo_path
+
+from .wiki_cache import PageCache, RequestWindow
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +26,16 @@ wikipedia.wikipedia.USER_AGENT = (
 # The package still defaults to http, which Wikimedia redirects.
 wikipedia.wikipedia.API_URL = "https://en.wikipedia.org/w/api.php"
 
-WIKIPEDIA_ATTEMPTS = 3
+WIKIPEDIA_ATTEMPTS = 6
 WIKIPEDIA_RETRY_SECONDS = 2.0
 WIKIPEDIA_MAX_WAIT = 60.0
+
+# Wikimedia's User-Agent policy asks unauthenticated clients to make requests in
+# series rather than in parallel. A sweep's workers are one client as far as the
+# endpoint is concerned, so the interval is what they share, not what each keeps.
+WIKIPEDIA_MIN_INTERVAL = 0.2
+WIKIPEDIA_CACHE_DIR = repo_path('data', 'wikipedia-cache')
+WINDOW_FILE = '.window'
 
 # Every worker of a sweep meets the same burst and is handed the same wait, so
 # the waits are jittered apart by a fraction of the wait itself, so that the
@@ -105,33 +117,69 @@ class LangChainWiki:
         self,
         attempts: int = WIKIPEDIA_ATTEMPTS,
         retry_seconds: float = WIKIPEDIA_RETRY_SECONDS,
+        cache_dir: Optional[Union[str, Path]] = None,
+        min_interval: float = WIKIPEDIA_MIN_INTERVAL,
     ) -> None:
+        """Without a `cache_dir` nothing is kept and nothing is spaced.
+
+        The default is off because the caller that wants a cache is a sweep,
+        which has a directory to put one in; an explorer built for a single
+        lookup should not leave a directory behind.
+        """
         self.attempts = attempts
         self.retry_seconds = retry_seconds
+        self.cache = PageCache(cache_dir)
+        self.window = RequestWindow(
+            Path(cache_dir) / WINDOW_FILE if cache_dir is not None else None,
+            min_interval,
+        )
         self.document: Optional[Document] = None
         self.lookup_str = ""
         self.lookup_index = 0
 
     def search(self, search: str) -> Union[str, Document]:
-        try:
-            page = self._page(search)
-            result: Union[str, Document] = Document(
-                page_content=page.content, metadata={"page": page.url}
-            )
-        except (wikipedia.PageError, wikipedia.DisambiguationError):
-            result = f"Could not find [{search}]. Similar: {self._similar(search)}"
-        except Exception as unreachable:
-            raise WikipediaUnavailable(
-                f"Wikipedia could not be reached while searching for {search!r}: "
-                f"{type(unreachable).__name__}: {unreachable}"
-            ) from unreachable
+        """`search`'s first paragraph, or why there is no page to take one from.
+
+        A search that could not reach Wikipedia raises instead of answering, and
+        is the one outcome not kept: caching it would make one bad minute of the
+        endpoint permanent for every later run sharing the directory.
+        """
+        result = self._remembered(search)
+        if result is None:
+            try:
+                page = self._page(search)
+                result = Document(
+                    page_content=page.content, metadata={"page": page.url}
+                )
+                self.cache.put(search, {"content": page.content, "url": page.url})
+            except (wikipedia.PageError, wikipedia.DisambiguationError):
+                result = f"Could not find [{search}]. Similar: {self._similar(search)}"
+                self.cache.put(search, {"absent": result})
+            except Exception as unreachable:
+                raise WikipediaUnavailable(
+                    f"Wikipedia could not be reached while searching for {search!r}: "
+                    f"{type(unreachable).__name__}: {unreachable}"
+                ) from unreachable
 
         if isinstance(result, Document):
-            self.document = result 
+            self.document = result
             return self._sumary
         else:
             self.document = None
             return result
+
+    def _remembered(self, search: str) -> Optional[Union[str, Document]]:
+        """What a previous search of `search` found, or None if none has."""
+        entry = self.cache.get(search)
+        if entry is None:
+            return None
+        if "absent" in entry:
+            return entry["absent"]
+        if "content" not in entry:
+            return None
+        return Document(
+            page_content=entry["content"], metadata={"page": entry.get("url", "")}
+        )
 
     def _page(self, search: str) -> Any:
         """`search`'s page, retrying the transport faults that arrive in bursts.
@@ -145,6 +193,7 @@ class LangChainWiki:
         """
         for attempt in range(1, self.attempts + 1):
             try:
+                self._hold()
                 return wikipedia.page(search, auto_suggest=False)
             except (wikipedia.PageError, wikipedia.DisambiguationError):
                 raise
@@ -154,9 +203,20 @@ class LangChainWiki:
                     search, attempt, self.attempts,
                     type(unreachable).__name__, unreachable,
                 )
+                wait = self._wait(unreachable, attempt)
+                # Before the process that met the refusal sleeps it off, every
+                # other process is held off too: a refusal answers the client,
+                # and the workers of a sweep are one client.
+                self.window.defer(wait)
                 if attempt == self.attempts:
                     raise
-                time.sleep(self._wait(unreachable, attempt))
+                time.sleep(wait)
+
+    def _hold(self) -> None:
+        """Wait for this request's slot in the window every process shares."""
+        owed = self.window.reserve()
+        if owed > 0:
+            time.sleep(owed)
 
     def _wait(self, unreachable: Exception, attempt: int) -> float:
         """Seconds before the attempt after `attempt`, jittered by up to half."""

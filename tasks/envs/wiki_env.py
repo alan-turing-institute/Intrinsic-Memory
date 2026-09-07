@@ -17,6 +17,8 @@ from mas.mas import EpisodeResult
 from .base_env import BaseEnv, BaseRecorder, clean_action_line
 from .utils import (
     WIKIPEDIA_ATTEMPTS,
+    WIKIPEDIA_CACHE_DIR,
+    WIKIPEDIA_MIN_INTERVAL,
     WIKIPEDIA_RETRY_SECONDS,
     LangChainWiki,
     WikipediaUnavailable,
@@ -44,6 +46,8 @@ class WikiReActEnv(BaseEnv):
         self.explorer = LangChainWiki(
             attempts=config.get('wikipedia_attempts', WIKIPEDIA_ATTEMPTS),
             retry_seconds=config.get('wikipedia_retry_seconds', WIKIPEDIA_RETRY_SECONDS),
+            cache_dir=config.get('wikipedia_cache_dir', WIKIPEDIA_CACHE_DIR),
+            min_interval=config.get('wikipedia_min_interval', WIKIPEDIA_MIN_INTERVAL),
         )
         self.unreachable_search_limit: int = config.get(
             'unreachable_search_limit', DEFAULT_UNREACHABLE_SEARCH_LIMIT

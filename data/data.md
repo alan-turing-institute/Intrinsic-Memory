@@ -210,3 +210,19 @@ The 10 tasks the oracle does not solve are all `PutNextS5N2Carrying`, where the
 agent starts already holding something and the bot asserts it is empty-handed.
 The level itself is solvable - dropping first and then handing over to the bot
 completes it - so this is a limitation of the measurement, not of the task.
+
+## The Wikipedia cache
+
+FEVER and HotpotQA search live Wikipedia, so a sweep's requests all come from one
+address and count against one rate limit. `data/wikipedia-cache/` is where search
+outcomes are kept and `data/wikipedia-cache/.window` is the moment the next
+request may go out; both are shared by every worker of every job pointed at the
+repository, and both are rebuilt from nothing if deleted.
+
+Deleting it costs a fetch of every title the sweep reaches, not correctness.
+Keeping it between runs is what makes the arms comparable: every seed then reads
+the article as it stood when the campaign started, rather than as Wikipedia
+edited it partway through.
+
+`wikipedia_cache_dir` and `wikipedia_min_interval` in the task's env config
+override the location and the spacing.

@@ -40,6 +40,21 @@ def installed_llm_settings():
     return settings
 
 
+@pytest.fixture(autouse=True)
+def wikipedia_cache_elsewhere(tmp_path, monkeypatch):
+    """A cache of its own per test, so no run reads or writes the repository's.
+
+    The default is a directory under `data/`, which every worker of a sweep is
+    meant to share. A suite left pointing at it would answer one test's search
+    out of another's, and out of yesterday's real run.
+    """
+    from tasks.envs import wiki_env
+
+    monkeypatch.setattr(
+        wiki_env, 'WIKIPEDIA_CACHE_DIR', tmp_path / 'wikipedia-cache', raising=False
+    )
+
+
 def _stub_module(name: str):
     if name not in sys.modules:
         sys.modules[name] = MagicMock()

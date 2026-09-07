@@ -221,7 +221,7 @@ def test_an_unreachable_search_does_not_replace_the_page_a_lookup_reads(monkeypa
 
     monkeypatch.setattr(wikipedia, 'page', lambda title, **kwargs: (_ for _ in ()).throw(
         ValueError('Expecting value: line 1 column 1 (char 0)')))
-    unreachable, _, _ = env.step('Search[Telemundo]')
+    unreachable, _, _ = env.step('Search[Univision]')
     assert 'could not be reached' in unreachable, unreachable
 
     observation, _, _ = env.step('Lookup[zebras]')
