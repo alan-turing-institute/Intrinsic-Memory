@@ -4,7 +4,8 @@
 The generated scripts are not committed; this generator is. Edit the constants
 below and rerun to produce a new sweep:
 
-    uv run slurm/generate_slurm.py
+    uv run slurm/generate_slurm.py                    # a sweep dated today
+    uv run slurm/generate_slurm.py --sweep 2026-09-08  # rejoin an existing one
 
 The calibration runs that size these jobs are slurm/generate_calibration.py,
 which builds its scripts from the cluster configuration and the job pieces here.
@@ -12,8 +13,10 @@ which builds its scripts from the cluster configuration and the job pieces here.
 Set SLURM_ACCOUNT to name an account in the generated scripts; without it they
 submit under the user's default.
 """
+import argparse
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 SLURM_DIR = Path(__file__).parent
@@ -61,23 +64,28 @@ TIKTOKEN_ENCODINGS_BASE = "/projects/public/brics/distributed_vllm/etc/encodings
 # scratch ALFWorld churns through is larger than the quota on its own.
 PROJECT_DIR = "/projects/u6vh/syuen.u6vh"
 
-# The sweep these scripts belong to. Edit it for a new sweep, so results and
-# logs land beside each other under a date rather than on top of the last one:
-# a run refuses to append to a results file whose header is not its schema.
+# The sweep a script belongs to, dating its results and logs so a new one lands
+# beside the last rather than on top of it: a run refuses to append to a results
+# file whose header is not its schema.
 #
-# A literal, not date.today(): every job of a sweep has to name the same results
-# directory for --resume to see what the last one finished, and a sweep outlives
-# the day it was generated on. Stamping today's date would silently hand a
-# regenerated script an empty directory and re-run the whole sweep.
-SWEEP = "2026-09-08"
-
-DEFAULT_DB_DIR = f"{PROJECT_DIR}/results/sweep-{SWEEP}"
-LOG_DIR = f"{PROJECT_DIR}/logs/{SWEEP}"
+# Today by default, and `--sweep` to name an existing one. Pass it whenever
+# regenerating scripts for a sweep already under way - every job of a sweep has
+# to name the same results directory for `--resume` to see what the last one
+# finished, and a sweep outlives the day its scripts were generated on.
+DEFAULT_SWEEP = date.today().isoformat()
 # Where the experiment processes put their temporary files. Not the node-local
 # scratch TMPDIR names by default: ALFWorld's PDDL engine copies a 28.8 MB
 # libdownward.so into it on every environment load, and 100 experiments doing
 # that at once exhausted it - 10,358 tasks of one sweep died on ENOSPC.
 SCRATCH_DIR = f"{PROJECT_DIR}/tmp"
+
+def db_dir_for(sweep: str) -> str:
+    return f"{PROJECT_DIR}/results/sweep-{sweep}"
+
+
+def log_dir_for(sweep: str) -> str:
+    return f"{PROJECT_DIR}/logs/{sweep}"
+
 
 NODES = 1
 GPUS = 4
@@ -192,9 +200,8 @@ def run_command(task: str, memories: list[str], cross_task: bool,
 \t--max_tokens {MAX_TOKENS_OVERRIDES.get(task, DEFAULT_MAX_TOKENS)}{trailing}"""
 
 
-def preamble(job_name: str, output_pattern: str, script_name: str,
-             time_limit: str = TIME_LIMIT, db_dir: str = DEFAULT_DB_DIR,
-             scratch_dir: str = SCRATCH_DIR) -> str:
+def preamble(job_name: str, output_pattern: str, script_name: str, db_dir: str,
+             time_limit: str = TIME_LIMIT, scratch_dir: str = SCRATCH_DIR) -> str:
     """Everything before the run: the allocation, the server, the environment."""
     return f"""#!/bin/bash
 {account_directive()}#SBATCH --job-name={job_name}
@@ -246,16 +253,17 @@ wait $VLLM_PID 2>/dev/null
 """
 
 
-def render_experiment(task: str) -> str:
+def render_experiment(task: str, sweep: str) -> str:
     return (
-        preamble(f"vllm-{task}", f"{LOG_DIR}/{task}-%x.%j.%t.out", f"{task}_experiment.sh")
+        preamble(f"vllm-{task}", f"{log_dir_for(sweep)}/{task}-%x.%j.%t.out",
+                 f"{task}_experiment.sh", db_dir=db_dir_for(sweep))
         + "\n"
         + run_command(task, every_arm(task), cross_task=False)
         + CLEANUP
     )
 
 
-def render_crosstask() -> str:
+def render_crosstask(sweep: str) -> str:
     """Every dataset's cross-task arms, in one job against one server.
 
     The datasets get a `run.py` each rather than one sweep over all of them:
@@ -270,7 +278,8 @@ def render_crosstask() -> str:
     )
 
     return (
-        preamble("vllm-crosstask", f"{LOG_DIR}/crosstask-%x.%j.%t.out", "crosstask.sh")
+        preamble("vllm-crosstask", f"{log_dir_for(sweep)}/crosstask-%x.%j.%t.out",
+                 "crosstask.sh", db_dir=db_dir_for(sweep))
         + """
 # The cross-task arm: an intrinsic memory is kept across the tasks of the dataset
 # instead of starting each task from an empty one. Only the intrinsicmemory-* modules
@@ -293,7 +302,7 @@ def write_script(script_name: str, body: str) -> None:
     print(f"wrote {path}")
 
 
-def ensure_log_dir(log_dir: str = LOG_DIR) -> None:
+def ensure_log_dir(log_dir: str) -> None:
     """Slurm opens the output file before the job's script runs, so it cannot mkdir its own."""
     try:
         Path(log_dir).mkdir(parents=True, exist_ok=True)
@@ -303,10 +312,25 @@ def ensure_log_dir(log_dir: str = LOG_DIR) -> None:
               file=sys.stderr)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--sweep",
+        default=DEFAULT_SWEEP,
+        help="the sweep these scripts belong to, dating its results and logs. Pass the"
+             " existing date when regenerating for a sweep already under way, or its jobs"
+             f" write somewhere --resume cannot see (default: today, {DEFAULT_SWEEP})",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
-    ensure_log_dir()
-    scripts = {f"{task}_experiment.sh": render_experiment(task) for task in TASKS}
-    scripts["crosstask.sh"] = render_crosstask()
+    sweep = parse_args().sweep
+    ensure_log_dir(log_dir_for(sweep))
+    print(f"sweep {sweep}: results -> {db_dir_for(sweep)}, logs -> {log_dir_for(sweep)}")
+
+    scripts = {f"{task}_experiment.sh": render_experiment(task, sweep) for task in TASKS}
+    scripts["crosstask.sh"] = render_crosstask(sweep)
 
     for script_name, body in scripts.items():
         write_script(script_name, body)
