@@ -5,8 +5,12 @@ embedding_device: cpu
 
 # env configs
 alfworld:
-  env_config_path: tasks/env_configs/alfworld_config.yaml 
-  max_steps: 30
+  env_config_path: tasks/env_configs/alfworld_config.yaml
+  # Not 30 like most. At 30 every arm of the calibration exhausted the budget -
+  # mean_trials 27.6 to 28.8 - and all ten solved the same two tasks of twenty,
+  # so the sweep could not have separated them. 50 is ALFWorld's own default in
+  # alfworld_config.yaml, and what ReAct and Reflexion use.
+  max_steps: 50
   few_shots_num: 1
 
 babyai:
