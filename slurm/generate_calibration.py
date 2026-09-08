@@ -17,9 +17,13 @@ import argparse
 
 from generate_slurm import (
     CLEANUP,
+    DEFAULT_SWEEP,
+    PROJECT_DIR,
     SEEDS,
     TASKS,
+    ensure_log_dir,
     every_arm,
+    log_dir_for,
     preamble,
     run_command,
     write_script,
@@ -28,7 +32,8 @@ from generate_slurm import (
 DEFAULT_SEEDS = SEEDS[:1]
 DEFAULT_MAX_TASKS = 20
 DEFAULT_TIME_LIMIT = "02:00:00"
-DEFAULT_DB_DIR = "$HOME/GMemory/.db-calibration"
+def db_dir_for(sweep: str) -> str:
+    return f"{PROJECT_DIR}/results/calibration-{sweep}"
 
 # Jericho's prompt tokens grow with the square of its 100-trial budget, so 20
 # tasks would be ~288M tokens - an 18-hour job. Five at 20 trials is ~8M.
@@ -69,12 +74,12 @@ def scope_flags(task: str, max_tasks: int | None, max_trials: int | None) -> str
     return flags
 
 
-def render(task: str, *, seeds: list[int], time_limit: str, db_dir: str,
+def render(task: str, *, seeds: list[int], time_limit: str, db_dir: str, log_dir: str,
            max_tasks: int | None, max_trials: int | None) -> str:
     return (
         preamble(
             f"vllm-{task}-calibrate",
-            f"out/{task}-calibrate-%x.%j.%t.out",
+            f"{log_dir}/{task}-calibrate-%x.%j.%t.out",
             f"{task}_calibrate.sh",
             time_limit=time_limit,
             db_dir=db_dir,
@@ -126,16 +131,26 @@ def parse_args() -> argparse.Namespace:
         help=f"the #SBATCH --time each job asks for (default: {DEFAULT_TIME_LIMIT})",
     )
     parser.add_argument(
+        "--sweep",
+        default=DEFAULT_SWEEP,
+        help=f"the sweep these calibrations belong to, dating their rows and logs"
+             f" (default: today, {DEFAULT_SWEEP})",
+    )
+    parser.add_argument(
         "--db_dir",
-        default=DEFAULT_DB_DIR,
-        help=f"where the runs write, unless DB_DIR is set at submit time (default:"
-             f" {DEFAULT_DB_DIR})",
+        help="where the runs write, unless DB_DIR is set at submit time (default:"
+             " the calibration directory for --sweep)",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    log_dir = log_dir_for(args.sweep)
+    db_dir = args.db_dir or db_dir_for(args.sweep)
+    ensure_log_dir(log_dir)
+    print(f"sweep {args.sweep}: calibration -> {db_dir}, logs -> {log_dir}")
+
     for task in args.task:
         write_script(
             f"{task}_calibrate.sh",
@@ -143,7 +158,8 @@ def main() -> None:
                 task,
                 seeds=args.seed,
                 time_limit=args.time_limit,
-                db_dir=args.db_dir,
+                db_dir=db_dir,
+                log_dir=log_dir,
                 max_tasks=args.max_tasks,
                 max_trials=args.max_trials,
             ),
