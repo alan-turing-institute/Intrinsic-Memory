@@ -64,7 +64,7 @@ srun --nodes=1 --gpus=1 --time=00:30:00 \
   uv pip install --no-build-isolation fast-downward-textworld==20.6.4
 ```
 
-Then check the whole path with `TASK=alfworld sbatch slurm/smoke_test.sh`, which
+Then check the whole path with `TASK=alfworld sbatch slurm/generated/gpt-oss-120b/smoke_test.sh`, which
 prints the simulator version and the number of games it can see before it runs.
 
 ## PDDL
