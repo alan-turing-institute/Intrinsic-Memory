@@ -53,6 +53,13 @@ else
   echo "unwritable on $(hostname), falling back to ${TMPDIR}"
 fi
 
+# vLLM asks for four GPUs by tensor_parallel_size, and a step that cannot see
+# four fails inside torch as `device >= 0 && device < num_gpus INTERNAL ASSERT
+# FAILED`, which names neither the count nor the step. Count them first.
+echo -n "gpus visible to a step: "
+srun --nodes=1 --gpus=${SLURM_GPUS} --ntasks-per-node 1 \
+  bash -c 'nvidia-smi -L 2>/dev/null | wc -l' 2>/dev/null || echo "could not launch a step"
+
 cd ~/vllm_test
 source .venv/bin/activate
 
@@ -147,7 +154,7 @@ rows=$(($(wc -l < ${DB_DIR}/overall_results.csv) - 1))
 if [ "$rows" -ne 2 ]; then
   echo "SMOKE TEST FAILED: expected 2 result rows, got ${rows}"
   cat ${DB_DIR}/failed_experiments.csv 2>/dev/null
-  kill $VLLM_PID 2>/dev/null
+  kill $VLLM_PID 2>/dev/null || true
   exit 1
 fi
 
@@ -161,11 +168,14 @@ print(sum(1 for r in rows if int(r["tasks_scored"]) == 0))
 if [ "$unscored" -ne 0 ]; then
   echo "SMOKE TEST FAILED: ${unscored} experiments scored no tasks at all"
   find ${DB_DIR} -name 'failed_tasks.csv' -exec cat {} +
-  kill $VLLM_PID 2>/dev/null
+  kill $VLLM_PID 2>/dev/null || true
   exit 1
 fi
 
 echo "SMOKE TEST PASSED"
 
-kill $VLLM_PID 2>/dev/null
-wait $VLLM_PID 2>/dev/null
+# `wait` on a process the line above killed reports the signal, and under
+# `set -e` that ends a passing run non-zero: the log says PASSED and sacct says
+# FAILED. Whoever checks the job state rather than reading the log is misled.
+kill $VLLM_PID 2>/dev/null || true
+wait $VLLM_PID 2>/dev/null || true
