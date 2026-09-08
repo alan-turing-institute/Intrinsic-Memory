@@ -53,7 +53,7 @@ az deployment group create --resource-group intrinsic-memory --template-file tem
 Slurm job scripts for running experiments on an HPC cluster (developed against the BriCS/Isambard-AI environment) live in `slurm/`. They follow two patterns:
 
 **Self-contained: serve a model + run experiments in one job**
-`slurm/alfworld_experiment.sh`, `slurm/babyai_experiment.sh`, `slurm/fever_experiment.sh`, `slurm/hotpotqa_experiment.sh`, `slurm/jericho_experiment.sh`, `slurm/pddl_experiment.sh`, `slurm/sciworld_experiment.sh`, `slurm/single_node_serve.sh`
+`slurm/generate_slurm.py` (with `slurm/config.py`, `slurm/models.py`, `slurm/render.py`), `slurm/single_node_serve.sh`
 
 Each of these scripts:
 1. Requests a node with 4 GPUs (`#SBATCH --gpus=4 --exclusive`) and loads cluster modules (`module load brics/nccl`).
@@ -61,40 +61,49 @@ Each of these scripts:
 3. Points `OPENAI_API_BASE` at the local vLLM server (`http://localhost:8000/v1`) and runs `uv run tasks/run.py`, sweeping over every memory module and 10 seeds for one task (alfworld/babyai/fever/hotpotqa/jericho/pddl/sciworld) or fever, pddl and sciworld at once (`single_node_serve.sh`).
 4. Kills the vLLM process once `run.py` finishes.
 
-Alongside the seven is one `slurm/crosstask.sh`: every dataset's intrinsic modules again, run with `--intrinsic_cross_task` so the memory is kept across the tasks of the dataset instead of starting each task from nothing. It gives each dataset its own `tasks/run.py`, concurrently against the one server, because the sweep is a Cartesian product and a single call over every dataset would pair each with every other dataset's hand-written template. Point it at the same results directory as the seven — the two arms are told apart by the `intrinsic_cross_task` column, not by the file they land in.
+Alongside the seven is one `slurm/generated/gpt-oss-120b/crosstask.sh`: every dataset's intrinsic modules again, run with `--intrinsic_cross_task` so the memory is kept across the tasks of the dataset instead of starting each task from nothing. It gives each dataset its own `tasks/run.py`, concurrently against the one server, because the sweep is a Cartesian product and a single call over every dataset would pair each with every other dataset's hand-written template. Point it at the same results directory as the seven — the two arms are told apart by the `intrinsic_cross_task` column, not by the file they land in.
 
-The datasets do not cost the same, so the starting token budget is per dataset in `slurm/generate_slurm.py` (`MAX_TOKENS_OVERRIDES`, with `DEFAULT_MAX_TOKENS` for the rest). `TIME_LIMIT` and `MAX_NUM_SEQS` are one value for every job. Edit the generator and rerun it; the scripts themselves are gitignored.
+Every script is generated. `slurm/config.py` holds the matrix and the cluster — the starting token budget is per dataset there (`MAX_TOKENS_OVERRIDES`, with `DEFAULT_MAX_TOKENS` for the rest), `TIME_LIMIT` one value for every job. `slurm/models.py` holds what varies by model, `max_num_seqs` among it. Edit those and rerun the generator; the scripts themselves are gitignored under `slurm/generated/`.
+
+```bash
+uv run slurm/generate_slurm.py                            # every script, gpt-oss, dated today
+uv run slurm/generate_slurm.py --model qwen3.6-35b-a3b    # the same for another model
+uv run slurm/generate_slurm.py --sweep 2026-09            # rejoin a sweep already under way
+uv run slurm/generate_slurm.py smoke                      # one kind only
+```
+
+A model is a whole serving configuration, not a name: the two in `slurm/models.py` need different vLLM builds, different weights locations and different flags, and each model's scripts go to `slurm/generated/<model>/` so two can sit side by side. The results file tells their rows apart by its `model` column, so both may point at one sweep directory.
 
 ```bash
 export DB_DIR=/projects/<project>/results/experiment-2026-09
-sbatch slurm/alfworld_experiment.sh   # 10 arms x 10 seeds
-sbatch slurm/babyai_experiment.sh     # 10 arms x 10 seeds
-sbatch slurm/fever_experiment.sh      # 10 arms x 10 seeds
-sbatch slurm/hotpotqa_experiment.sh   # 10 arms x 10 seeds
-sbatch slurm/jericho_experiment.sh    # 10 arms x 10 seeds
-sbatch slurm/pddl_experiment.sh       # 10 arms x 10 seeds
-sbatch slurm/sciworld_experiment.sh   # 10 arms x 10 seeds
-sbatch slurm/crosstask.sh             # every dataset's 3 intrinsic arms, cross-task
+sbatch slurm/generated/gpt-oss-120b/alfworld_experiment.sh   # 10 arms x 10 seeds
+sbatch slurm/generated/gpt-oss-120b/babyai_experiment.sh     # 10 arms x 10 seeds
+sbatch slurm/generated/gpt-oss-120b/fever_experiment.sh      # 10 arms x 10 seeds
+sbatch slurm/generated/gpt-oss-120b/hotpotqa_experiment.sh   # 10 arms x 10 seeds
+sbatch slurm/generated/gpt-oss-120b/jericho_experiment.sh    # 10 arms x 10 seeds
+sbatch slurm/generated/gpt-oss-120b/pddl_experiment.sh       # 10 arms x 10 seeds
+sbatch slurm/generated/gpt-oss-120b/sciworld_experiment.sh   # 10 arms x 10 seeds
+sbatch slurm/generated/gpt-oss-120b/crosstask.sh             # every dataset's 3 intrinsic arms, cross-task
 ```
 
 `DB_DIR` defaults to `PROJECT_DIR/results/sweep-<date>`, where the date is `--sweep` on the generator — today unless given. Pass the existing date when regenerating scripts for a sweep already under way, or its jobs write somewhere `--resume` cannot see what the last one finished, and every script echoes where it is writing. Use a directory no earlier run wrote to: a run refuses to append to a results file whose header is not its schema. Results, logs and scratch all go to project space rather than home, because one sweep exceeds a home quota on its own — 17 G of results, 15 G of logs, and an ALFWorld sweep's scratch is larger again.
 
 **Check the whole path in half an hour first**
-`slurm/smoke_test.sh` has the same shape as those - serve, then run - but for one task, two memory modules, one seed and two tasks of the dataset (`--max_tasks 2 --max_trials 3`). It then prints what the run wrote and fails if the two result rows are not there — including a wrong `--model`, which otherwise fails once per experiment rather than once. It also probes whether the filesystem grants `flock`, which is what the results file's append lock needs, whether Wikipedia answers, whether `java` is on `PATH` for ScienceWorld, and whether ALFWorld's simulator and games are installed. Worth a submission before any 24-hour job, and after any change to the cluster, the model or the environment.
+`slurm/generated/gpt-oss-120b/smoke_test.sh` has the same shape as those - serve, then run - but for one task, two memory modules, one seed and two tasks of the dataset (`--max_tasks 2 --max_trials 3`). It then prints what the run wrote and fails if the two result rows are not there — including a wrong `--model`, which otherwise fails once per experiment rather than once. It also probes whether the filesystem grants `flock`, which is what the results file's append lock needs, whether Wikipedia answers, whether `java` is on `PATH` for ScienceWorld, and whether ALFWorld's simulator and games are installed. Worth a submission before any 24-hour job, and after any change to the cluster, the model or the environment. It is also how a model is brought up for the first time: it is the only script that asserts the endpoint answers in the shape the experiment needs, so run `uv run slurm/generate_slurm.py smoke --model <slug>` and submit it before pointing a sweep at a model.
 
 `TASK` picks the dataset (default `fever`) and `VENV` the environment, so a dataset whose simulator is not in the shared `.venv` can be checked against one of its own without disturbing a job already queued against it:
 
 ```bash
-TASK=alfworld VENV=~/alfworld-test-venv sbatch slurm/smoke_test.sh
+TASK=alfworld VENV=~/alfworld-test-venv sbatch slurm/generated/gpt-oss-120b/smoke_test.sh
 ```
 
 **Size the real jobs before submitting them**
-`slurm/<task>_calibrate.sh` sits between the smoke test and a 24-hour job: one dataset, every arm, one seed, twenty tasks at the full trial budget, in a 2-hour allocation. `slurm/generate_calibration.py` generates them, out of the same cluster configuration and job pieces as the sweep:
+`slurm/generated/gpt-oss-120b/<task>_calibrate.sh` sits between the smoke test and a 24-hour job: one dataset, every arm, one seed, twenty tasks at the full trial budget, in a 2-hour allocation. The same generator makes them, out of the same cluster configuration and job pieces as the sweep:
 
 ```bash
-uv run slurm/generate_calibration.py                  # every dataset
-uv run slurm/generate_calibration.py --task fever pddl
-sbatch slurm/fever_calibrate.sh
+uv run slurm/generate_slurm.py calibration                  # every dataset
+uv run slurm/generate_slurm.py calibration --task fever pddl
+sbatch slurm/generated/gpt-oss-120b/fever_calibrate.sh
 ```
 
 Every value a calibration is sized by is a flag with that default — `--seed`, `--max_tasks`, `--max_trials`, `--time_limit`, `--db_dir` — so resizing one takes no edit: `--max_tasks 5 --time_limit 00:30:00` for a quicker shakedown. A flag given on the command line also overrides the per-dataset `OVERRIDES` table, which is what holds Jericho to five tasks by default.
@@ -115,13 +124,13 @@ These scripts hardcode several specific paths and values that need updating for 
 | Where | What it is | How to change it |
 |---|---|---|
 | `cd ~/GMemory` (all scripts) | Path to this repo's checkout, activated with a `uv`-managed `.venv` (`uv run tasks/run.py ...`) rather than the conda env from Setup below | Point at wherever you clone this repo, and switch to `conda activate GMemory` + `python tasks/run.py` if you're not using `uv` |
-| `PROJECT_DIR` (`/projects/u6vh/syuen.u6vh`, in `slurm/generate_slurm.py`) | One user's project allocation on BriCS, and the root of every path a job writes: `results/sweep-<date>` for result rows, `logs/<date>` for job output, `tmp` for the experiment processes' `TMPDIR` | Point at your own project or scratch space. It has to be somewhere large — home is quota'd, and a single sweep's results, logs and scratch all exceed a typical one |
+| `PROJECT_DIR` (`/projects/u6vh/syuen.u6vh`, in `slurm/config.py`) | One user's project allocation on BriCS, and the root of every path a job writes: `results/sweep-<date>` for result rows, `logs/<date>` for job output, `tmp` for the experiment processes' `TMPDIR` | Point at your own project or scratch space. It has to be somewhere large — home is quota'd, and a single sweep's results, logs and scratch all exceed a typical one |
 | `cd ~/vllm_test` (every serving script) | A separate directory/venv used only to launch `vllm serve`, kept apart from the experiment venv above so vLLM's own dependencies don't clash with this repo's | Point at your own vLLM-serving venv, or drop this `cd`/`activate` pair if you serve models a different way |
 | `module load brics/nccl` | Cluster environment module providing NCCL (GPU communication library needed for tensor-parallel vLLM) | Replace with your cluster's NCCL module, or drop it if your cluster's default environment already provides NCCL |
 | `YAML_CONFIG="/projects/public/brics/distributed_vllm/GPT-OSS_Hopper.yaml"` | vLLM server config (tensor-parallel/batch settings) stored in BriCS's shared project space | Replace with your own vLLM config path, or drop `--config $YAML_CONFIG` and pass the equivalent `vllm serve` flags directly |
 | `HF_HOME=/projects/public/brics/hf` | Shared HuggingFace cache directory on BriCS's project space | Point at your own HF cache dir, or unset to fall back to the default `~/.cache/huggingface` |
 | `MODEL_PATH=$HF_HOME/hub/models--openai--gpt-oss-120b/snapshots/<hash>/` | Resolved local snapshot path for the served model's weights inside `HF_HOME` | Update the snapshot hash to match your own cache, or pass a HF Hub model name directly instead of a local path |
-| `MODEL_NAME` (`openai/gpt-oss-120b`, or `Qwen/Qwen3.6-35B-A3B` in `single_node_serve.sh`) | The model tag `vllm serve` registers and the tag `tasks/run.py` requests via the OpenAI-compatible API | Set to whichever model you're serving — each script now serves and queries one name, where `single_node_serve.sh` used to serve one and ask for another |
+| The `Model` entries in `slurm/models.py` | One model's whole serving configuration: the vLLM venv that serves it, where its weights are, its context window and batch limits, and the flags it needs. `vllm serve` registers `name` and `tasks/run.py` asks for the same one — they have to agree, because GPTChat sizes its token budget from the `max_model_len` on the card under that exact id | Add a `Model` for yours and select it with `--model <slug>`. Bring it up with the generated smoke test before a sweep |
 | `TIKTOKEN_ENCODINGS_BASE="/projects/public/brics/distributed_vllm/etc/encodings"` | Local copy of tiktoken's tokenizer encodings, used to avoid downloading them from the internet on restricted compute nodes | Point at your own local encodings cache, or drop the variable if your compute nodes have internet access |
 
 Beyond this table, `#SBATCH --output` in every script names an absolute path under `PROJECT_DIR/logs/<date>`, the same `--sweep` date. Slurm opens that file before the job's script runs, so the directory cannot create itself: the generators make it, and print a warning instead if they cannot reach it.
