@@ -56,6 +56,11 @@ MODEL_PATH = f"{HF_HOME}/hub/models--openai--gpt-oss-120b/snapshots/{MODEL_SNAPS
 MODEL_NAME = "openai/gpt-oss-120b"
 TIKTOKEN_ENCODINGS_BASE = "/projects/public/brics/distributed_vllm/etc/encodings"
 DEFAULT_DB_DIR = "$HOME/GMemory/.db-experiment"
+# Where the experiment processes put their temporary files. Not the node-local
+# scratch TMPDIR names by default: ALFWorld's PDDL engine copies a 28.8 MB
+# libdownward.so into it on every environment load, and 100 experiments doing
+# that at once exhausted it - 10,358 tasks of one sweep died on ENOSPC.
+SCRATCH_DIR = "/projects/u6vh/syuen.u6vh/tmp"
 
 NODES = 1
 GPUS = 4
@@ -171,7 +176,8 @@ def run_command(task: str, memories: list[str], cross_task: bool,
 
 
 def preamble(job_name: str, output_pattern: str, script_name: str,
-             time_limit: str = TIME_LIMIT, db_dir: str = DEFAULT_DB_DIR) -> str:
+             time_limit: str = TIME_LIMIT, db_dir: str = DEFAULT_DB_DIR,
+             scratch_dir: str = SCRATCH_DIR) -> str:
     """Everything before the run: the allocation, the server, the environment."""
     return f"""#!/bin/bash
 {account_directive()}#SBATCH --job-name={job_name}
@@ -204,6 +210,13 @@ cd {REPO_DIR}
 source .venv/bin/activate
 
 sleep {VLLM_STARTUP_SLEEP}
+
+# The experiment processes only, not vLLM: vLLM keeps the node-local TMPDIR it
+# started with, which is faster and big enough for one process.
+export TMPDIR="${{SCRATCH_DIR:-{scratch_dir}}}/{job_name}-${{SLURM_JOB_ID}}"
+mkdir -p "${{TMPDIR}}"
+trap 'rm -rf "${{TMPDIR}}"' EXIT TERM INT
+echo "TMPDIR -> ${{TMPDIR}} ($(df -h "${{TMPDIR}}" | tail -1 | awk '{{print $4}}') free)"
 
 echo "results -> ${{DB_DIR}}"
 """
