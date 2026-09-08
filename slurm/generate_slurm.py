@@ -19,6 +19,7 @@ submit under the user's default.
 """
 import argparse
 import sys
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -124,6 +125,24 @@ def add_common(parser: argparse.ArgumentParser, *, suppress: bool) -> None:
         default=argparse.SUPPRESS if suppress else TASKS,
         help="the datasets to generate for (default: all of them)",
     )
+    parser.add_argument(
+        "--max_model_len", type=int, default=argparse.SUPPRESS if suppress else None,
+        help="vLLM's per-request context window. It has to clear the largest prompt plus"
+             " the token ceiling a starved call is retried at (default: the model's own)",
+    )
+    parser.add_argument(
+        "--max_num_batched_tokens", type=int, default=argparse.SUPPRESS if suppress else None,
+        help="a per-step total across the whole batch, not a per-request cap. Being the"
+             " larger of the two is what lets a step prefill several requests at once"
+             " instead of one at a time (default: the model's own)",
+    )
+    parser.add_argument(
+        "--max_num_seqs", type=int, default=argparse.SUPPRESS if suppress else None,
+        help="vLLM's request queue depth. A job's requests in flight are its experiment"
+             " count - at most 210, the crosstask job's seven datasets x 3 arms x 10 seeds"
+             " - and past what the KV cache holds the depth is a number the server cannot"
+             " honour (default: the model's own)",
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -170,11 +189,23 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+SERVE_OVERRIDES = ("max_model_len", "max_num_batched_tokens", "max_num_seqs")
+
+
 def main() -> None:
     args = parse_args()
     model = MODELS[args.model]
     sweep = args.sweep
     kind = args.kind or "all"
+
+    overrides = {
+        name: getattr(args, name)
+        for name in SERVE_OVERRIDES
+        if getattr(args, name, None) is not None
+    }
+    if overrides:
+        model = replace(model, **overrides)
+        print("overriding " + ", ".join(f"{name}={value}" for name, value in overrides.items()))
 
     ensure_log_dir(log_dir_for(sweep))
     print(f"{model.slug}, sweep {sweep}: results -> {db_dir_for(sweep)},"

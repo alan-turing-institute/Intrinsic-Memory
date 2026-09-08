@@ -26,6 +26,10 @@ class Model:
 
     `served` is what `vllm serve` is given - a local snapshot path or a Hub id.
     `vllm_dir` holds the `.venv` that serves; it is not the experiment venv.
+
+    The three size fields are this model's defaults, not fixed values: what a
+    checkpoint and a node can carry differ per model, so they cannot be one
+    number for all of them, and `generate_slurm.py` takes a flag for each.
     """
 
     slug: str
@@ -51,17 +55,9 @@ GPT_OSS_120B = Model(
     vllm_dir="~/vllm_test",
     hf_home=SHARED_HF_HOME,
     # These three override the shared GPT-OSS_Hopper.yaml, which sets them to
-    # 8192, 10240 and off.
-    #
-    # max_num_batched_tokens is a per-step total across the whole batch, not a
-    # per-request cap, so being the larger of the two is what lets a step
-    # prefill several requests at once instead of one at a time. max_model_len
-    # is per request, and has to clear the largest prompt plus the token ceiling.
-    #
-    # max_num_seqs is vLLM's request queue depth. A job's requests in flight are
-    # its experiment count, at most 210 - the crosstask job, seven datasets x 3
-    # arms x 10 seeds - and the KV cache holds 3,730,336 tokens, 227 of them at
-    # max_model_len. Past that the depth is a number the server cannot honour.
+    # 8192, 10240 and off. On this node the KV cache holds 3,730,336 tokens, 227
+    # of them at max_model_len, so a queue deeper than that is a number the
+    # server cannot honour.
     max_model_len=16384,
     max_num_batched_tokens=32768,
     max_num_seqs=256,
