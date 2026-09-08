@@ -20,6 +20,7 @@ from generate_slurm import (
     LOG_DIR,
     PROJECT_DIR,
     SEEDS,
+    SWEEP,
     TASKS,
     ensure_log_dir,
     every_arm,
@@ -31,7 +32,7 @@ from generate_slurm import (
 DEFAULT_SEEDS = SEEDS[:1]
 DEFAULT_MAX_TASKS = 20
 DEFAULT_TIME_LIMIT = "02:00:00"
-DEFAULT_DB_DIR = f"{PROJECT_DIR}/results/calibration"
+DEFAULT_DB_DIR = f"{PROJECT_DIR}/results/calibration-{SWEEP}"
 
 # Jericho's prompt tokens grow with the square of its 100-trial budget, so 20
 # tasks would be ~288M tokens - an 18-hour job. Five at 20 trials is ~8M.

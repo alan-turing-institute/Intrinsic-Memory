@@ -61,11 +61,18 @@ TIKTOKEN_ENCODINGS_BASE = "/projects/public/brics/distributed_vllm/etc/encodings
 # scratch ALFWorld churns through is larger than the quota on its own.
 PROJECT_DIR = "/projects/u6vh/syuen.u6vh"
 
-# A sweep gets its own results directory. A run refuses to append to a results
-# file whose header is not its schema, so reusing one across sweeps is the
-# thing to avoid; --resume, on the other hand, needs the whole set in one.
-DEFAULT_DB_DIR = f"{PROJECT_DIR}/results/sweep-2026-09"
-LOG_DIR = f"{PROJECT_DIR}/results/logs"
+# The sweep these scripts belong to. Edit it for a new sweep, so results and
+# logs land beside each other under a date rather than on top of the last one:
+# a run refuses to append to a results file whose header is not its schema.
+#
+# A literal, not date.today(): every job of a sweep has to name the same results
+# directory for --resume to see what the last one finished, and a sweep outlives
+# the day it was generated on. Stamping today's date would silently hand a
+# regenerated script an empty directory and re-run the whole sweep.
+SWEEP = "2026-09-08"
+
+DEFAULT_DB_DIR = f"{PROJECT_DIR}/results/sweep-{SWEEP}"
+LOG_DIR = f"{PROJECT_DIR}/logs/{SWEEP}"
 # Where the experiment processes put their temporary files. Not the node-local
 # scratch TMPDIR names by default: ALFWorld's PDDL engine copies a 28.8 MB
 # libdownward.so into it on every environment load, and 100 experiments doing
