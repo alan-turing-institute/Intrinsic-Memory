@@ -17,8 +17,11 @@ import argparse
 
 from generate_slurm import (
     CLEANUP,
+    LOG_DIR,
+    PROJECT_DIR,
     SEEDS,
     TASKS,
+    ensure_log_dir,
     every_arm,
     preamble,
     run_command,
@@ -28,7 +31,7 @@ from generate_slurm import (
 DEFAULT_SEEDS = SEEDS[:1]
 DEFAULT_MAX_TASKS = 20
 DEFAULT_TIME_LIMIT = "02:00:00"
-DEFAULT_DB_DIR = "$HOME/GMemory/.db-calibration"
+DEFAULT_DB_DIR = f"{PROJECT_DIR}/results/calibration"
 
 # Jericho's prompt tokens grow with the square of its 100-trial budget, so 20
 # tasks would be ~288M tokens - an 18-hour job. Five at 20 trials is ~8M.
@@ -74,7 +77,7 @@ def render(task: str, *, seeds: list[int], time_limit: str, db_dir: str,
     return (
         preamble(
             f"vllm-{task}-calibrate",
-            f"out/{task}-calibrate-%x.%j.%t.out",
+            f"{LOG_DIR}/{task}-calibrate-%x.%j.%t.out",
             f"{task}_calibrate.sh",
             time_limit=time_limit,
             db_dir=db_dir,
@@ -136,6 +139,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    ensure_log_dir()
     for task in args.task:
         write_script(
             f"{task}_calibrate.sh",

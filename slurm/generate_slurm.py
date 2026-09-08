@@ -13,6 +13,7 @@ Set SLURM_ACCOUNT to name an account in the generated scripts; without it they
 submit under the user's default.
 """
 import os
+import sys
 from pathlib import Path
 
 SLURM_DIR = Path(__file__).parent
@@ -55,12 +56,21 @@ MODEL_SNAPSHOT = "b5c939de8f754692c1647ca79fbf85e8c1e70f8a"
 MODEL_PATH = f"{HF_HOME}/hub/models--openai--gpt-oss-120b/snapshots/{MODEL_SNAPSHOT}/"
 MODEL_NAME = "openai/gpt-oss-120b"
 TIKTOKEN_ENCODINGS_BASE = "/projects/public/brics/distributed_vllm/etc/encodings"
-DEFAULT_DB_DIR = "$HOME/GMemory/.db-experiment"
+# One user's project allocation, and the root of everything a job writes.
+# Home is a 101 G quota; one sweep's results are 17 G, its logs 15 G, and the
+# scratch ALFWorld churns through is larger than the quota on its own.
+PROJECT_DIR = "/projects/u6vh/syuen.u6vh"
+
+# A sweep gets its own results directory. A run refuses to append to a results
+# file whose header is not its schema, so reusing one across sweeps is the
+# thing to avoid; --resume, on the other hand, needs the whole set in one.
+DEFAULT_DB_DIR = f"{PROJECT_DIR}/results/sweep-2026-09"
+LOG_DIR = f"{PROJECT_DIR}/results/logs"
 # Where the experiment processes put their temporary files. Not the node-local
 # scratch TMPDIR names by default: ALFWorld's PDDL engine copies a 28.8 MB
 # libdownward.so into it on every environment load, and 100 experiments doing
 # that at once exhausted it - 10,358 tasks of one sweep died on ENOSPC.
-SCRATCH_DIR = "/projects/u6vh/syuen.u6vh/tmp"
+SCRATCH_DIR = f"{PROJECT_DIR}/tmp"
 
 NODES = 1
 GPUS = 4
@@ -194,8 +204,8 @@ module load brics/nccl
 module list
 
 # Every job of one experiment set must point at the same directory: they append to
-# one overall_results.csv under a lock on the file. Override at submit time with
-#   DB_DIR=/projects/<project>/results/experiment-2026-09 sbatch slurm/{script_name}
+# one overall_results.csv under a lock on the file. A new sweep needs a new one:
+#   DB_DIR={PROJECT_DIR}/results/sweep-next sbatch slurm/{script_name}
 DB_DIR=${{DB_DIR:-{db_dir}}}
 
 {vllm_serve_block()}
@@ -231,7 +241,7 @@ wait $VLLM_PID 2>/dev/null
 
 def render_experiment(task: str) -> str:
     return (
-        preamble(f"vllm-{task}", f"out/{task}-%x.%j.%t.out", f"{task}_experiment.sh")
+        preamble(f"vllm-{task}", f"{LOG_DIR}/{task}-%x.%j.%t.out", f"{task}_experiment.sh")
         + "\n"
         + run_command(task, every_arm(task), cross_task=False)
         + CLEANUP
@@ -253,7 +263,7 @@ def render_crosstask() -> str:
     )
 
     return (
-        preamble("vllm-crosstask", "out/crosstask-%x.%j.%t.out", "crosstask.sh")
+        preamble("vllm-crosstask", f"{LOG_DIR}/crosstask-%x.%j.%t.out", "crosstask.sh")
         + """
 # The cross-task arm: an intrinsic memory is kept across the tasks of the dataset
 # instead of starting each task from an empty one. Only the intrinsicmemory-* modules
@@ -276,7 +286,18 @@ def write_script(script_name: str, body: str) -> None:
     print(f"wrote {path}")
 
 
+def ensure_log_dir(log_dir: str = LOG_DIR) -> None:
+    """Slurm opens the output file before the job's script runs, so it cannot mkdir its own."""
+    try:
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        print(f"could not create {log_dir}: {error}", file=sys.stderr)
+        print("create it on the cluster before sbatch, or slurm drops the job's output",
+              file=sys.stderr)
+
+
 def main() -> None:
+    ensure_log_dir()
     scripts = {f"{task}_experiment.sh": render_experiment(task) for task in TASKS}
     scripts["crosstask.sh"] = render_crosstask()
 

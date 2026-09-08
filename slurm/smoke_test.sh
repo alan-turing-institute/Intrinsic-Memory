@@ -4,7 +4,7 @@
 #SBATCH --gpus=4
 #SBATCH --time=00:30:00
 #SBATCH --exclusive
-#SBATCH --output=out/smoke-%x.%j.%t.out
+#SBATCH --output=/projects/u6vh/syuen.u6vh/results/logs/smoke-%x.%j.%t.out
 
 # The whole path, small: serve, run two tasks of one dataset through two memory
 # modules, and check what came out. Run this before submitting a 24-hour job, and
