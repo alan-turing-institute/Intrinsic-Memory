@@ -150,6 +150,11 @@ def run_command(task: str, memories: list[str], cross_task: bool,
 
     A backgrounded one records its own pid: a bare `wait` would also wait on the
     vLLM server started the same way, which only ever exits when killed.
+
+    `--resume` makes a job that is submitted again finish what the last one ran
+    out of time for. It skips whichever experiments already have a row in
+    ${DB_DIR}, so pointing a job at a directory whose results you meant to
+    replace will skip them rather than redo them - use a new DB_DIR for that.
     """
     flag = "\n\t--intrinsic_cross_task \\" if cross_task else ""
     trailing = " &\nRUN_PIDS+=($!)" if background else ""
@@ -161,6 +166,7 @@ def run_command(task: str, memories: list[str], cross_task: bool,
 \t--seed {" ".join(str(seed) for seed in seeds)} \\{flag}{scope}
 \t--db_dir ${{DB_DIR}} \\
 \t--model ${{MODEL_NAME}} \\
+\t--resume \\
 \t--max_tokens {MAX_TOKENS_OVERRIDES.get(task, DEFAULT_MAX_TOKENS)}{trailing}"""
 
 
