@@ -36,6 +36,11 @@ class LLMSettings:
             that, so the retry doubles it up to here. Where the endpoint reports
             a context window, the climb also stops at what the prompt leaves of
             it, so this being the wider of the two is harmless.
+        thinking_token_budget: Tokens a reasoning model may spend thinking before
+            the endpoint ends its reasoning block for it, sent per request. None
+            leaves the model to stop on its own. vLLM implements this only
+            alongside a `--reasoning-config` naming the reasoning delimiters; an
+            endpoint that refuses the field is sent it once and then not again.
         temperature: Sampling temperature for any call that does not set its own.
         request_timeout: Seconds one request may take before it is abandoned. The
             openai default is 600, which multiplied by that client's retries and
@@ -52,6 +57,7 @@ class LLMSettings:
     temperature: float
     request_timeout: float
     log_responses: bool
+    thinking_token_budget: Optional[int] = None
 
     @classmethod
     def load(
@@ -61,6 +67,7 @@ class LLMSettings:
         temperature: float,
         request_timeout: float,
         log_responses: bool,
+        thinking_token_budget: Optional[int] = None,
     ) -> "LLMSettings":
         """Credentials from .env or the environment, the rest from the caller.
 
@@ -96,6 +103,7 @@ class LLMSettings:
             temperature=temperature,
             request_timeout=request_timeout,
             log_responses=log_responses,
+            thinking_token_budget=thinking_token_budget,
         )
 
 
