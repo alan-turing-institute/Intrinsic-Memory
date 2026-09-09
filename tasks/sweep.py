@@ -121,6 +121,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
                              'answers nothing, and the same request again cannot answer '
                              'either, so the budget doubles up to here instead. Set it to '
                              '--max_tokens to keep every call to one budget.')
+    parser.add_argument('--thinking_token_budget', type=int, default=None,
+                        help='Tokens a reasoning model may spend thinking before the '
+                             'endpoint closes its reasoning block for it. Left unset, the '
+                             'model stops on its own, and one that does not stop spends '
+                             'every budget it is given on reasoning and answers nothing. '
+                             'vLLM honours it only when served with a --reasoning-config; '
+                             'an endpoint that refuses the field is sent it once.')
     parser.add_argument('--temperature', type=float, default=0.1,
                         help='Sampling temperature for any call that does not set its own.')
     parser.add_argument('--request_timeout', type=float, default=300.0,

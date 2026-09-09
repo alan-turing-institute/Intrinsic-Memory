@@ -159,6 +159,10 @@ def run_command(task: str, memories: list[str], cross_task: bool, model: Model,
     """
     flag = "\n\t--intrinsic_cross_task \\" if cross_task else ""
     trailing = " &\nRUN_PIDS+=($!)" if background else ""
+    tokens = "".join(f"\n\t{flag_name} {value} \\" for flag_name, value in (
+        ("--max_tokens_ceiling", model.max_tokens_ceiling),
+        ("--thinking_token_budget", model.thinking_token_budget),
+    ) if value)
 
     return f"""uv run --no-sync tasks/run.py \\
 \t--task {task} \\
@@ -167,8 +171,18 @@ def run_command(task: str, memories: list[str], cross_task: bool, model: Model,
 \t--seed {" ".join(str(seed) for seed in seeds)} \\{flag}{scope}
 \t--db_dir ${{DB_DIR}} \\
 \t--model ${{MODEL_NAME}} \\
-\t--resume \\
-\t--max_tokens {MAX_TOKENS_OVERRIDES.get(task, DEFAULT_MAX_TOKENS)}{trailing}"""
+\t--resume \\{tokens}
+\t--max_tokens {max_tokens_for(task, model)}{trailing}"""
+
+
+def max_tokens_for(task: str, model: Model) -> int:
+    """A model that thinks needs one budget for every dataset, not the task table.
+
+    The per-task numbers size a plain answer to that dataset's prompts. A
+    reasoning model's spend is dominated by its thinking budget instead, which is
+    the same wherever it is pointed.
+    """
+    return model.max_tokens or MAX_TOKENS_OVERRIDES.get(task, DEFAULT_MAX_TOKENS)
 
 
 def preamble(model: Model, job_name: str, output_pattern: str, script_name: str, *,

@@ -27,9 +27,13 @@ class Model:
     `served` is what `vllm serve` is given - a local snapshot path or a Hub id.
     `vllm_dir` holds the `.venv` that serves; it is not the experiment venv.
 
-    The three size fields are this model's defaults, not fixed values: what a
+    The size fields are this model's defaults, not fixed values: what a
     checkpoint and a node can carry differ per model, so they cannot be one
     number for all of them, and `generate_slurm.py` takes a flag for each.
+
+    The three generation fields are what a run is told to ask for, rather than
+    what the server is started with. Left None, `tasks/run.py` uses its own
+    defaults, which are sized for a model that answers without thinking first.
     """
 
     slug: str
@@ -45,6 +49,9 @@ class Model:
     tiktoken_encodings: str = ""
     extra_serve_flags: tuple[str, ...] = ()
     extra_env: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    max_tokens: int | None = None
+    max_tokens_ceiling: int | None = None
+    thinking_token_budget: int | None = None
     notes: str = ""
 
 
@@ -87,19 +94,27 @@ QWEN36_35B_A3B = Model(
         # A multimodal checkpoint: vLLM sizes its profiling run for the largest
         # image and video batch the model accepts, and the experiment sends text.
         """--limit-mm-per-prompt '{"image": 0, "video": 0}'""",
+        # What makes thinking_token_budget on a request do anything: the budget is
+        # enforced by injecting this end delimiter, and vLLM has no default pair.
+        """--reasoning-config '{"reasoning_start_str": "<think>", """
+        """"reasoning_end_str": "</think>"}'""",
     ),
     # vLLM's default top-k/top-p sampler is FlashInfer's, which JIT-compiles its
     # kernels on first use and so needs nvcc. Compute nodes have neither nvcc on
     # PATH nor /usr/local/cuda, and the build fails inside the memory-profiling
     # run rather than at startup. The PyTorch-native sampler needs no toolchain.
     extra_env=(("VLLM_USE_FLASHINFER_SAMPLER", "0"),),
+    # Measured: left to think freely this model spent every one of 96,993
+    # completion tokens per task reasoning, and answered nothing at all. A
+    # thinking budget bounds that, and the rest of max_tokens is what it has to
+    # answer in once the budget closes its reasoning block.
+    max_tokens=8192,
+    max_tokens_ceiling=32768,
+    thinking_token_budget=1024,
     notes=(
         "vLLM 0.28.0 built for CUDA 12.9, from https://wheels.vllm.ai/0.28.0/cu129 with torch "
         "from https://download.pytorch.org/whl/cu129 - the PyPI wheel pulls torch cu130, and the "
-        "GH200 driver 565.57.01 tops out at CUDA 12.7. "
-        "TODO: with the parser on, vLLM 0.28 returns the trace as `reasoning` where 0.15.1 "
-        "returned `reasoning_content`, and GPTChat reads only the latter, so it sees no reasoning "
-        "on this endpoint."
+        "GH200 driver 565.57.01 tops out at CUDA 12.7."
     ),
 )
 

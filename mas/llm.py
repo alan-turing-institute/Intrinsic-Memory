@@ -26,6 +26,29 @@ def _refuses_temperature(error: BaseException) -> bool:
     return "temperature" in str(error).lower()
 
 
+def _refuses_thinking_budget(error: BaseException) -> bool:
+    """Whether an endpoint error is a complaint about `thinking_token_budget`.
+
+    A vLLM without a `--reasoning-config` rejects the field by name; matched on
+    the message for the same reason the temperature check is.
+    """
+    return "thinking_token_budget" in str(error).lower()
+
+
+def _trace(message) -> Optional[str]:
+    """A reasoning model's hidden reasoning, whichever field it arrived under.
+
+    vLLM 0.15 sends `reasoning_content` and 0.28 sends `reasoning`. Reading only
+    one of them turns a budget spent entirely on reasoning - which the retry can
+    fix by growing it - into a reply with no explanation, which it cannot.
+    """
+    for field_name in ("reasoning_content", "reasoning"):
+        trace = getattr(message, field_name, None)
+        if trace:
+            return trace
+    return None
+
+
 _WINDOW_UNASKED = object()
 
 
@@ -118,6 +141,7 @@ class GPTChat(LLM):
         self.tracker: TokenTracker = tracker if tracker is not None else TokenTracker()
         self._sends_temperature: bool = True
         self._sends_stop: bool = True
+        self._sends_thinking_budget: bool = self.settings.thinking_token_budget is not None
         self._context_window: object = _WINDOW_UNASKED
 
     def _endpoint_context_window(self) -> Optional[int]:
@@ -164,11 +188,17 @@ class GPTChat(LLM):
             max_completion_tokens=max_tokens,
             stop=stop_strs if self._sends_stop else None,
         )
+        if self._sends_thinking_budget:
+            request["extra_body"] = {
+                "thinking_token_budget": self.settings.thinking_token_budget
+            }
 
         if self._sends_temperature:
             try:
                 return self.client.chat.completions.create(temperature=temperature, **request)
             except Exception as error:
+                if _refuses_thinking_budget(error):
+                    return self._without_thinking_budget(request, error, temperature=temperature)
                 if not _refuses_temperature(error):
                     raise
                 self._sends_temperature = False
@@ -178,7 +208,29 @@ class GPTChat(LLM):
                     file=sys.stderr,
                 )
 
-        return self.client.chat.completions.create(**request)
+        try:
+            return self.client.chat.completions.create(**request)
+        except Exception as error:
+            if not _refuses_thinking_budget(error):
+                raise
+            return self._without_thinking_budget(request, error)
+
+    def _without_thinking_budget(self, request: dict, error: BaseException, **extra):
+        """Retry a refused request without the thinking budget, and stop sending it.
+
+        The endpoint cannot end the reasoning block itself, so the budget climb
+        in `__call__` is all that is left to get an answer out of a model that
+        thinks past its budget.
+        """
+        self._sends_thinking_budget = False
+        print(
+            f"{self.model_name} refused thinking_token_budget="
+            f"{self.settings.thinking_token_budget} ({error}); sending subsequent calls "
+            f"without it - serve it with --reasoning-config to have it honoured",
+            file=sys.stderr,
+        )
+        request.pop("extra_body", None)
+        return self.client.chat.completions.create(**request, **extra)
 
     def __call__(
         self,
@@ -229,13 +281,13 @@ class GPTChat(LLM):
                     intrinsic=intrinsic,
                 )
 
-                reasoning = getattr(response.choices[0].message, 'reasoning_content', None)
+                reasoning = _trace(response.choices[0].message)
 
                 # Having asked for a stop sequence and been given nothing back,
                 # the stop sequence is the first suspect: it is matched against
                 # the raw stream, so it can fire inside reasoning the caller
                 # never sees. Endpoints report that two ways - gpt-oss on vLLM
-                # sends content=None with the text in `reasoning_content`, ollama
+                # sends content=None with the text in a reasoning field, ollama
                 # sends content='' and no reasoning field - so neither the shape
                 # nor the reasoning field can be what this turns on.
                 if not (answer or '').strip() and self._sends_stop and stop_strs:

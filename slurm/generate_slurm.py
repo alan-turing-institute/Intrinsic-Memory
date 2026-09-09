@@ -137,6 +137,23 @@ def add_common(parser: argparse.ArgumentParser, *, suppress: bool) -> None:
              " instead of one at a time (default: the model's own)",
     )
     parser.add_argument(
+        "--max_tokens", type=int, default=argparse.SUPPRESS if suppress else None,
+        help="tokens one reply may generate, reasoning and answer together. A reasoning"
+             " model spends its thinking budget out of this and answers in the rest"
+             " (default: the model's own, or tasks/run.py's per-dataset numbers)",
+    )
+    parser.add_argument(
+        "--max_tokens_ceiling", type=int, default=argparse.SUPPRESS if suppress else None,
+        help="how far a starved call's retry may grow the budget. It has to sit inside"
+             " max_model_len with the prompt (default: the model's own)",
+    )
+    parser.add_argument(
+        "--thinking_token_budget", type=int, default=argparse.SUPPRESS if suppress else None,
+        help="tokens a reasoning model may think for before the endpoint closes its"
+             " reasoning block. Honoured only where the model is served with a"
+             " --reasoning-config (default: the model's own)",
+    )
+    parser.add_argument(
         "--max_num_seqs", type=int, default=argparse.SUPPRESS if suppress else None,
         help="vLLM's request queue depth. A job's requests in flight are its experiment"
              " count - at most 210, the crosstask job's seven datasets x 3 arms x 10 seeds"
@@ -189,7 +206,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-SERVE_OVERRIDES = ("max_model_len", "max_num_batched_tokens", "max_num_seqs")
+MODEL_OVERRIDES = (
+    "max_model_len", "max_num_batched_tokens", "max_num_seqs",
+    "max_tokens", "max_tokens_ceiling", "thinking_token_budget",
+)
 
 
 def main() -> None:
@@ -200,7 +220,7 @@ def main() -> None:
 
     overrides = {
         name: getattr(args, name)
-        for name in SERVE_OVERRIDES
+        for name in MODEL_OVERRIDES
         if getattr(args, name, None) is not None
     }
     if overrides:

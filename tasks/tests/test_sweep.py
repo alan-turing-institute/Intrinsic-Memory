@@ -213,7 +213,7 @@ def build_config(tmp_path, seed: int) -> dict:
         'failed_topk': 0, 'insights_topk': 3, 'threshold': 0.0, 'use_projector': False,
         'use_validator': False, 'hop': 1, 'intrinsic_cross_task': False,
         'max_tokens': 512, 'max_tokens_ceiling': 8192, 'temperature': 0.1,
-        'request_timeout': 300.0,
+        'thinking_token_budget': None, 'request_timeout': 300.0,
         'log_responses': False,
         'num_workers': 1, 'db_dir': str(tmp_path),
         'overall_results_filename': 'overall_results.csv', 'failed_tasks_filename': 'failed_tasks.csv',

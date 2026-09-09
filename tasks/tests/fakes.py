@@ -171,15 +171,21 @@ class StarvedReasoningCompletions(FakeCompletions):
     """A reasoning model that answers only once its budget reaches `needs`.
 
     Below that the whole budget goes on reasoning and the answer never starts,
-    which vLLM reports for gpt-oss as content=None with the text in
-    `reasoning_content` and finish_reason='length'. The usage it reports is the
-    whole budget, because that is what was generated.
+    which vLLM reports as content=None with the text in a reasoning field and
+    finish_reason='length'. The usage it reports is the whole budget, because
+    that is what was generated.
+
+    `reasoning_field` is the name that field arrives under, which differs by
+    server version: `reasoning_content` on the vLLM 0.15 serving gpt-oss,
+    `reasoning` on the 0.28 serving Qwen3.6.
     """
 
-    def __init__(self, script, needs: int, reasoning="thinking it over"):
+    def __init__(self, script, needs: int, reasoning="thinking it over",
+                 reasoning_field: str = "reasoning_content"):
         super().__init__(script)
         self.needs = needs
         self.reasoning = reasoning
+        self.reasoning_field = reasoning_field
 
     def create(self, **kwargs):
         budget = kwargs.get("max_completion_tokens") or 0
@@ -189,7 +195,7 @@ class StarvedReasoningCompletions(FakeCompletions):
         self.calls.append(kwargs)
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(
-                content=None, reasoning_content=self.reasoning,
+                content=None, **{self.reasoning_field: self.reasoning},
             ))],
             usage=SimpleNamespace(prompt_tokens=self.prompt_tokens, completion_tokens=budget),
         )
