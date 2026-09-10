@@ -1,6 +1,6 @@
 """The models a sweep can be pointed at, and what each needs to be served.
 
-A model is a whole serving configuration, not just a name: the two here need
+A model is a whole serving configuration, not just a name: the ones here need
 different vLLM builds, different weights locations and different flags, and
 getting one of those wrong costs a whole allocation before anything says so.
 
@@ -118,5 +118,39 @@ QWEN36_35B_A3B = Model(
     ),
 )
 
-MODELS = {model.slug: model for model in (GPT_OSS_120B, QWEN36_35B_A3B)}
+GEMMA4_26B_A4B = Model(
+    slug="gemma4-26b-a4b",
+    name="google/gemma-4-26B-A4B-it",
+    served="google/gemma-4-26B-A4B-it",
+    # vLLM 0.28.0, the same venv Qwen3.6 is served from: it registers every
+    # Gemma 4 architecture already, and a second build of the same wheel would
+    # only be a second copy.
+    vllm_dir="~/vllm_qwen36",
+    hf_home=f"{PROJECT_DIR}/hf",
+    # The card offers 262144. This is Qwen3.6's window, so a memory template is
+    # compared across models at one context size rather than two.
+    max_model_len=65536,
+    max_num_batched_tokens=8192,
+    max_num_seqs=512,
+    # Thinking is off unless the chat template is asked for it, so this parser
+    # has nothing to split most of the time. It is on because the cost of being
+    # wrong is one-sided: unparsed, a thought block reaches process_action as
+    # the action.
+    reasoning_parser="gemma4",
+    extra_serve_flags=(
+        "--enable-prefix-caching",
+        # Image, audio and video towers, all three of which vLLM sizes its
+        # profiling run for. The experiment sends text.
+        """--limit-mm-per-prompt '{"image": 0, "video": 0, "audio": 0}'""",
+    ),
+    extra_env=(("VLLM_USE_FLASHINFER_SAMPLER", "0"),),
+    notes=(
+        "MoE, 26B total and 4B active. Thinking delimiters are <|channel> and <channel|>, not "
+        "<think>/</think>, so a --reasoning-config for a thinking budget would have to name "
+        "those; none is set because the template leaves thinking off."
+    ),
+)
+
+
+MODELS = {model.slug: model for model in (GPT_OSS_120B, QWEN36_35B_A3B, GEMMA4_26B_A4B)}
 DEFAULT_MODEL = GPT_OSS_120B.slug
