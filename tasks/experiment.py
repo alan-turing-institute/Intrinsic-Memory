@@ -23,6 +23,7 @@ from mas.settings import LLMSettings, use_llm_settings
 from mas.utils import EmbeddingFunc, repo_path
 
 import results
+from experiment_config import ExperimentConfig
 from envs import BaseEnv, BaseRecorder, get_env, get_recorder, get_task
 from mas_workflow import get_mas
 from prompts import get_dataset_system_prompt, get_task_few_shots
@@ -34,19 +35,19 @@ with open(CONFIG_PATH) as reader:
     CONFIG: dict = yaml.safe_load(reader)
 
 
-def install_llm_settings(experiment_config: dict) -> LLMSettings:
+def install_llm_settings(experiment_config: ExperimentConfig) -> LLMSettings:
     """Make this experiment's LLM flags the settings its GPTChats will use.
 
     Workers are spawned rather than forked, so what the parent installed does
     not reach them: each one installs its own from the config it was handed.
     """
     settings = LLMSettings.load(
-        max_tokens=experiment_config['max_tokens'],
-        max_tokens_ceiling=experiment_config['max_tokens_ceiling'],
-        thinking_token_budget=experiment_config['thinking_token_budget'],
-        temperature=experiment_config['temperature'],
-        request_timeout=experiment_config['request_timeout'],
-        log_responses=experiment_config['log_responses'],
+        max_tokens=experiment_config.max_tokens,
+        max_tokens_ceiling=experiment_config.max_tokens_ceiling,
+        thinking_token_budget=experiment_config.thinking_token_budget,
+        temperature=experiment_config.temperature,
+        request_timeout=experiment_config.request_timeout,
+        log_responses=experiment_config.log_responses,
     )
     use_llm_settings(settings)
 
@@ -296,27 +297,27 @@ ENV_FLAGS = (
 )
 
 
-def run_experiment(experiment_config: dict) -> dict:
-    task_name = experiment_config['task']
-    mas_type = experiment_config['mas_type']
-    mas_memory_type = experiment_config['mas_memory']
-    reasoning_type = experiment_config['reasoning']
-    model_type = experiment_config['model']
-    max_trials = experiment_config['max_trials']
-    max_tasks = experiment_config['max_tasks']
-    seed = experiment_config['seed']
-    successful_topk = experiment_config['successful_topk']
-    failed_topk = experiment_config['failed_topk']
-    insights_topk = experiment_config['insights_topk']
-    threshold = experiment_config['threshold']
-    use_projector = experiment_config['use_projector']
-    use_validator = experiment_config['use_validator']
-    hop = experiment_config['hop']
-    intrinsic_cross_task = experiment_config['intrinsic_cross_task']
-    db_dir = experiment_config['db_dir']
-    overall_results_filename = experiment_config['overall_results_filename']
-    failed_tasks_filename = experiment_config['failed_tasks_filename']
-    failed_experiments_filename = experiment_config['failed_experiments_filename']
+def run_experiment(experiment_config: ExperimentConfig) -> dict:
+    task_name = experiment_config.task
+    mas_type = experiment_config.mas_type
+    mas_memory_type = experiment_config.mas_memory
+    reasoning_type = experiment_config.reasoning
+    model_type = experiment_config.model
+    max_trials = experiment_config.max_trials
+    max_tasks = experiment_config.max_tasks
+    seed = experiment_config.seed
+    successful_topk = experiment_config.successful_topk
+    failed_topk = experiment_config.failed_topk
+    insights_topk = experiment_config.insights_topk
+    threshold = experiment_config.threshold
+    use_projector = experiment_config.use_projector
+    use_validator = experiment_config.use_validator
+    hop = experiment_config.hop
+    intrinsic_cross_task = experiment_config.intrinsic_cross_task
+    db_dir = experiment_config.db_dir
+    overall_results_filename = experiment_config.overall_results_filename
+    failed_tasks_filename = experiment_config.failed_tasks_filename
+    failed_experiments_filename = experiment_config.failed_experiments_filename
 
     # set save dirs
     working_dir = os.path.join(db_dir, model_dir_name(model_type), task_name, mas_type, f'{mas_memory_type}')
@@ -329,7 +330,7 @@ def run_experiment(experiment_config: dict) -> dict:
         task_configs: TaskManager = build_task(
             task_name, mas_type, mas_memory_type, seed, working_dir,
             model=model_type, max_trials=max_trials, max_tasks=max_tasks,
-            env_overrides={name: experiment_config.get(name) for name in ENV_FLAGS},
+            env_overrides={name: getattr(experiment_config, name) for name in ENV_FLAGS},
         )
         task_configs.mas_config['successful_topk'] = successful_topk
         task_configs.mas_config['failed_topk'] = failed_topk
@@ -398,7 +399,7 @@ def run_experiment(experiment_config: dict) -> dict:
 
 
 def _write_failed_experiment(
-    experiment_config: dict,
+    experiment_config: ExperimentConfig,
     error: Exception,
     db_dir: str,
     failed_experiments_filename: str,
@@ -408,15 +409,8 @@ def _write_failed_experiment(
         failed_path,
         results.FAILED_EXPERIMENT_COLUMNS,
         {
-            **results.identity(
-                model=experiment_config.get('model', ''),
-                task=experiment_config.get('task', ''),
-                mas_type=experiment_config.get('mas_type', ''),
-                mas_memory=experiment_config.get('mas_memory', ''),
-                use_validator=experiment_config.get('use_validator', False),
-                intrinsic_cross_task=experiment_config.get('intrinsic_cross_task', False),
-            ),
-            'seed': experiment_config.get('seed', ''),
+            **experiment_config.identity(),
+            'seed': experiment_config.seed,
             **results.failure_fields(error),
         },
     )

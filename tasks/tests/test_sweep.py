@@ -13,6 +13,7 @@ another does not fail, it just quietly answers a different question.
 import importlib
 import sys
 from concurrent.futures import Future
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -54,7 +55,7 @@ def test_every_combination_of_the_swept_flags_is_one_experiment(sweep_module):
     configs = sweep.build_experiment_configs(args)
 
     assert len(configs) == 2 * 3 * 3, "2 tasks x 3 memory modules x 3 seeds"
-    distinct = {(config['task'], config['mas_memory'], config['seed']) for config in configs}
+    distinct = {(config.task, config.mas_memory, config.seed) for config in configs}
     assert len(distinct) == len(configs), "the same experiment appears more than once"
 
 
@@ -63,6 +64,16 @@ def test_one_value_per_flag_is_one_experiment(sweep_module):
     args = parse(sweep, '--mas_type', 'autogen', '--task', 'fever', '--mas_memory', 'empty')
 
     assert len(sweep.build_experiment_configs(args)) == 1
+
+
+def test_new_parser_flag_requires_an_experiment_config_field(sweep_module):
+    args = parse(
+        sweep_module, '--mas_type', 'autogen', '--task', 'fever', '--mas_memory', 'empty'
+    )
+    args.untracked_flag = 'would otherwise be silently accepted'
+
+    with pytest.raises(TypeError, match='unexpected: untracked_flag'):
+        sweep_module.build_experiment_configs(args)
 
 
 # ── the LLM flags reach the process that makes the calls ─────────────────────
@@ -206,19 +217,23 @@ def _refuse_to_be_used(*args, **kwargs):
 
 # ── C2 · two seeds of one config are kept apart ───────────────────────────────
 
-def build_config(tmp_path, seed: int) -> dict:
-    return {
-        'task': 'fever', 'mas_type': 'autogen', 'mas_memory': 'empty', 'reasoning': 'io',
-        'model': 'fake-model', 'max_trials': 3, 'max_tasks': None, 'seed': seed, 'successful_topk': 1,
-        'failed_topk': 0, 'insights_topk': 3, 'threshold': 0.0, 'use_projector': False,
-        'use_validator': False, 'hop': 1, 'intrinsic_cross_task': False,
-        'max_tokens': 512, 'max_tokens_ceiling': 8192, 'temperature': 0.1,
-        'thinking_token_budget': None, 'request_timeout': 300.0,
-        'log_responses': False,
-        'num_workers': 1, 'db_dir': str(tmp_path),
-        'overall_results_filename': 'overall_results.csv', 'failed_tasks_filename': 'failed_tasks.csv',
-        'failed_experiments_filename': 'failed_experiments.csv',
-    }
+def build_config(tmp_path, seed: int, *extra_args: str):
+    """A real parser-derived config, so test fixtures cannot drift from the CLI."""
+    sweep = importlib.import_module("sweep")
+    args = parse(
+        sweep,
+        '--mas_type', 'autogen',
+        '--task', 'fever',
+        '--mas_memory', 'empty',
+        '--model', 'fake-model',
+        '--max_trials', '3',
+        '--max_tokens', '512',
+        '--seed', str(seed),
+        '--num_workers', '1',
+        '--db_dir', str(tmp_path),
+        *extra_args,
+    )
+    return sweep.build_experiment_configs(args)[0]
 
 
 def stub_build_task(experiment, tasks: list[dict] = ()):
@@ -278,7 +293,7 @@ def test_a_worker_installs_its_settings_before_it_builds_anything(
     monkeypatch.setattr(experiment, 'run_task', lambda *args, **kwargs: None)
     reset_default_llm_settings()
 
-    outcome = experiment.run_experiment({**build_config(tmp_path, seed=42), 'max_tokens': 4096})
+    outcome = experiment.run_experiment(replace(build_config(tmp_path, seed=42), max_tokens=4096))
 
     assert outcome['status'] == 'success', outcome.get('error')
     assert default_llm_settings().max_tokens == 4096
@@ -295,15 +310,9 @@ def test_a_flag_that_configures_an_llm_call_reaches_its_settings(
     monkeypatch.setattr(experiment, 'build_mas', lambda *args, **kwargs: None)
     monkeypatch.setattr(experiment, 'run_task', lambda *args, **kwargs: None)
     reset_default_llm_settings()
-    args = parse(
-        sweep_module, '--mas_type', 'autogen', '--task', 'fever', '--mas_memory', 'empty',
-        '--max_tokens_ceiling', '3333',
+    outcome = experiment.run_experiment(
+        build_config(tmp_path, 42, '--max_tokens_ceiling', '3333')
     )
-
-    outcome = experiment.run_experiment({
-        **sweep_module.build_experiment_configs(args)[0], **build_config(tmp_path, seed=42),
-        'max_tokens_ceiling': 3333,
-    })
 
     assert outcome['status'] == 'success', outcome.get('error')
     assert default_llm_settings().max_tokens_ceiling == 3333
@@ -331,14 +340,11 @@ def test_a_flag_that_configures_an_environment_reaches_it(
     monkeypatch.setattr(experiment, 'get_task', lambda task, **kwargs: [{'task': 'a task'}])
     monkeypatch.setattr(experiment, 'build_mas', fake_build_mas)
     monkeypatch.setattr(experiment, 'run_task', lambda *args, **kwargs: None)
-    args = parse(
-        sweep_module, '--mas_type', 'autogen', '--task', 'fever', '--mas_memory', 'empty',
-        '--wikipedia_attempts', '7', '--unreachable_search_limit', '9',
+    outcome = experiment.run_experiment(
+        build_config(
+            tmp_path, 42, '--wikipedia_attempts', '7', '--unreachable_search_limit', '9'
+        )
     )
-
-    outcome = experiment.run_experiment({
-        **sweep_module.build_experiment_configs(args)[0], **build_config(tmp_path, seed=42),
-    })
 
     assert outcome['status'] == 'success', outcome.get('error')
     assert built['wikipedia_attempts'] == 7, built
@@ -460,7 +466,7 @@ def test_the_cross_task_arm_is_not_mistaken_for_the_baseline(
 ):
     """The two arms share a mas_memory value; the column is what separates them."""
     run_one_experiment(experiment_module, monkeypatch, build_config(tmp_path, seed=42))
-    cross_task = {**build_config(tmp_path, seed=42), 'intrinsic_cross_task': True}
+    cross_task = replace(build_config(tmp_path, seed=42), intrinsic_cross_task=True)
 
     remaining, already_done = sweep_module.experiments_to_run(
         [cross_task], str(Path(tmp_path) / 'overall_results.csv')

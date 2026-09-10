@@ -21,10 +21,11 @@ from envs import ENVS
 from envs.utils import WIKIPEDIA_ATTEMPTS, WIKIPEDIA_RETRY_SECONDS
 from envs.wiki_env import DEFAULT_UNREACHABLE_SEARCH_LIMIT
 from experiment import install_llm_settings, run_experiment
+from experiment_config import ExperimentConfig
 from mas_workflow import MAS
 
 
-def build_experiment_configs(args) -> list[dict]:
+def build_experiment_configs(args) -> list[ExperimentConfig]:
     """One config per combination of the flags given several values.
 
     Every parsed flag is read, so a flag added to the parser reaches the
@@ -36,12 +37,15 @@ def build_experiment_configs(args) -> list[dict]:
         for name, value in vars(args).items()
     }
 
-    return [dict(zip(values, combination)) for combination in product(*values.values())]
+    return [
+        ExperimentConfig.from_mapping(dict(zip(values, combination)))
+        for combination in product(*values.values())
+    ]
 
 
 def experiments_to_run(
-    experiments: list[dict], overall_results_path: str
-) -> tuple[list[dict], int]:
+    experiments: list[ExperimentConfig], overall_results_path: str
+) -> tuple[list[ExperimentConfig], int]:
     """The experiments with no row in `overall_results_path` yet, and how many had one.
 
     Every writer appends, so re-running a killed sweep would add a second row for
@@ -51,13 +55,13 @@ def experiments_to_run(
     recorded = results.recorded_experiments(overall_results_path)
     remaining = [
         experiment for experiment in experiments
-        if results.experiment_key(experiment) not in recorded
+        if experiment.experiment_key() not in recorded
     ]
 
     return remaining, len(experiments) - len(remaining)
 
 
-def run_experiments(experiments: list[dict], num_workers: int) -> list[dict]:
+def run_experiments(experiments: list[ExperimentConfig], num_workers: int) -> list[dict]:
     """Every experiment, in this process or in a pool of them.
 
     A pool is not spawned for a single experiment. The workers need nothing
@@ -174,7 +178,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] = None) -> None:
     args = build_arg_parser().parse_args(argv)
 
-    settings: LLMSettings = install_llm_settings(vars(args))
+    experiments = build_experiment_configs(args)
+    settings: LLMSettings = install_llm_settings(experiments[0])
     print(f'LLM endpoint: {settings.api_base}, max_tokens: {settings.max_tokens}')
 
     overall_results_path = results.overall_results_path(
@@ -182,7 +187,6 @@ def main(argv: list[str] = None) -> None:
     )
     results.check_header(overall_results_path, results.AGGREGATE_COLUMNS)
 
-    experiments = build_experiment_configs(args)
     if args.resume:
         experiments, already_done = experiments_to_run(experiments, overall_results_path)
         print(f'{already_done} experiments already recorded in {overall_results_path}, skipping')
