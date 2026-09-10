@@ -30,8 +30,8 @@ class IntrinsicMASMemory(MASMemoryBase):
     
     """
     # Class attributes, deliberately unannotated so they stay off the
-    # constructor: build_system rebuilds a memory as `memory.__class__(...)`,
-    # which drops anything passed in.
+    # constructor: for_namespace creates a fresh sibling of the same class,
+    # so solver and validator keep the same prompt variant.
     system_prompt = ""
     memory_update_prompt = INTRINSICMEMORY_DEFAULT.memory_update_prompt
 
