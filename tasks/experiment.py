@@ -385,7 +385,7 @@ def run_experiment(experiment_config: dict) -> dict:
         }
     except Exception as e:
         print(f"Experiment failed: task={task_name} mas_memory={mas_memory_type} seed={seed}\n{traceback.format_exc()}", file=sys.stderr)
-        failed_path = _write_failed_experiment(experiment_config, e, db_dir, failed_experiments_filename)
+        failed_path = write_failed_experiment(experiment_config, e, db_dir, failed_experiments_filename)
         return {
             'task': task_name,
             'mas_type': mas_type,
@@ -397,7 +397,7 @@ def run_experiment(experiment_config: dict) -> dict:
         }
 
 
-def _write_failed_experiment(
+def write_failed_experiment(
     experiment_config: dict,
     error: Exception,
     db_dir: str,

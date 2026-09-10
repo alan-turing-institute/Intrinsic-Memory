@@ -8,7 +8,8 @@ each one is isolated - a failure is recorded and the rest of the sweep continues
 import argparse
 import multiprocessing
 import os
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import signal
+import time
 from itertools import product
 
 from tqdm import tqdm
@@ -20,7 +21,8 @@ import results
 from envs import ENVS
 from envs.utils import WIKIPEDIA_ATTEMPTS, WIKIPEDIA_RETRY_SECONDS
 from envs.wiki_env import DEFAULT_UNREACHABLE_SEARCH_LIMIT
-from experiment import install_llm_settings, run_experiment
+from experiment import install_llm_settings, run_experiment, write_failed_experiment
+from worker_process import send_outcome
 from mas_workflow import MAS
 
 
@@ -57,28 +59,104 @@ def experiments_to_run(
     return remaining, len(experiments) - len(remaining)
 
 
-def run_experiments(experiments: list[dict], num_workers: int) -> list[dict]:
-    """Every experiment, in this process or in a pool of them.
+POLL_SECONDS = 0.05
 
-    A pool is not spawned for a single experiment. The workers need nothing
-    shared: they append to the same result files under a lock on each file, which
-    is also what makes two separately submitted jobs safe.
+
+class WorkerDied(RuntimeError):
+    """A worker ended without returning a result."""
+
+
+def _death_outcome(experiment_config: dict, exitcode) -> dict:
+    """The failure a killed worker could not record for itself."""
+    if exitcode is not None and exitcode < 0:
+        number = -exitcode
+        error = WorkerDied(
+            f'worker killed by signal {number} ({signal.Signals(number).name})'
+        )
+    else:
+        error = WorkerDied(f'worker exited with status {exitcode} and no result')
+
+    failed_path = write_failed_experiment(
+        experiment_config,
+        error,
+        experiment_config.get('db_dir', ''),
+        experiment_config.get('failed_experiments_filename', 'failed_experiments.csv'),
+    )
+    return {
+        'task': experiment_config.get('task', ''),
+        'mas_type': experiment_config.get('mas_type', ''),
+        'mas_memory': experiment_config.get('mas_memory', ''),
+        'seed': experiment_config.get('seed', ''),
+        'status': 'failed',
+        'error': f'{type(error).__name__}: {error}',
+        'failed_path': failed_path,
+    }
+
+
+def run_experiments(experiments: list[dict], num_workers: int, worker=None) -> list[dict]:
+    """Every experiment, in this process or in one process each.
+
+    One process per experiment rather than a pool of them. A pool fails every
+    experiment still in it when it loses a single worker, and a worker killed
+    outright - by the OOM killer, or by a fatal signal in a native extension -
+    raises nothing for the pool to attribute to the experiment that caused it.
+
+    The workers need nothing shared: they append to the same result files under a
+    lock on each file, which is also what makes two separately submitted jobs
+    safe. `worker` names the callable a child runs, which is what lets a test
+    supply one that dies.
     """
+    worker = run_experiment if worker is None else worker
+
     if len(experiments) == 1 or num_workers <= 1:
-        return [run_experiment(experiment_config) for experiment_config in experiments]
+        return [worker(experiment_config) for experiment_config in experiments]
 
     ctx = multiprocessing.get_context('spawn')
-    with ProcessPoolExecutor(
-        max_workers=min(num_workers, len(experiments)), mp_context=ctx
-    ) as executor:
-        futures = [
-            executor.submit(run_experiment, experiment_config)
-            for experiment_config in experiments
-        ]
-        return [
-            future.result()
-            for future in tqdm(as_completed(futures), total=len(futures), desc='Running experiments')
-        ]
+    limit = min(num_workers, len(experiments))
+    queued = list(experiments)
+    running: dict = {}
+    delivered: dict = {}
+    outcomes: list[dict] = []
+
+    with tqdm(total=len(experiments), desc='Running experiments') as progress:
+        while queued or running:
+            while queued and len(running) < limit:
+                experiment_config = queued.pop(0)
+                receiver, sender = ctx.Pipe(duplex=False)
+                process = ctx.Process(
+                    target=send_outcome, args=(worker, experiment_config, sender)
+                )
+                process.start()
+                sender.close()
+                running[process] = (experiment_config, receiver)
+
+            for process, (experiment_config, receiver) in list(running.items()):
+                # Read before reaping: a child blocking on a send nothing has
+                # read yet is still alive, and waiting for it to exit first
+                # would deadlock.
+                if process not in delivered and receiver.poll():
+                    try:
+                        delivered[process] = receiver.recv()
+                    except EOFError:
+                        # A child that is gone leaves a readable pipe with
+                        # nothing in it, which is how a kill looks from here.
+                        delivered[process] = None
+                if process.is_alive():
+                    continue
+
+                process.join()
+                receiver.close()
+                del running[process]
+                outcome = delivered.pop(process, None)
+                if outcome is None:
+                    outcome = _death_outcome(experiment_config, process.exitcode)
+                outcomes.append(outcome)
+                progress.update(1)
+
+            if running:
+                time.sleep(POLL_SECONDS)
+
+    return outcomes
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

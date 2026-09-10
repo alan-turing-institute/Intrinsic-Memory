@@ -12,14 +12,19 @@ another does not fail, it just quietly answers a different question.
 
 import importlib
 import sys
-from concurrent.futures import Future
+import pathlib
+import os
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from tasks.envs.base_env import BaseRecorder
 from tasks.tests.fakes import FakeEnv
+from tasks.tests.spawn_workers import (
+    kill_this_worker_on_seed_2,
+    record_concurrency,
+    report_this_process,
+)
 from tasks.tests.test_run_task import StubMAS, read_csv
 
 
@@ -124,84 +129,105 @@ def test_the_mas_loggers_only_reach_stderr_when_the_run_asked_for_it(
                 logging.getLogger('mas').removeHandler(handler)
 
 
-# ── C1 · running them, in this process or in a pool ───────────────────────────
+# ── C1 · running them, in this process or in one process each ─────────────
 
-class FakeExecutor:
-    """ProcessPoolExecutor's shape, running each submission inline."""
-
-    def __init__(self, log: list, max_workers=None, mp_context=None):
-        self.log = log
-        self.max_workers = max_workers
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc_info):
-        return False
-
-    def submit(self, function, *args):
-        self.log.append(args)
-        future = Future()
-        future.set_result(function(*args))
-        return future
-
-
-def test_a_single_experiment_does_not_spawn_a_pool(sweep_module, monkeypatch):
+def test_a_single_experiment_runs_in_this_process(sweep_module, tmp_path):
+    """Spawning a process to run one experiment buys nothing and costs a fresh
+    interpreter and every import in it."""
     sweep = sweep_module
-    monkeypatch.setattr(sweep, 'run_experiment', lambda config, *args: {'ran': config['seed']})
-    monkeypatch.setattr(sweep, 'ProcessPoolExecutor', _refuse_to_be_used)
 
-    assert sweep.run_experiments([{'seed': 42}], num_workers=8) == [{'ran': 42}]
-
-
-def test_one_worker_runs_every_experiment_in_this_process(sweep_module, monkeypatch):
-    sweep = sweep_module
-    monkeypatch.setattr(sweep, 'run_experiment', lambda config, *args: {'ran': config['seed']})
-    monkeypatch.setattr(sweep, 'ProcessPoolExecutor', _refuse_to_be_used)
-
-    outcomes = sweep.run_experiments([{'seed': 1}, {'seed': 2}], num_workers=1)
-
-    assert outcomes == [{'ran': 1}, {'ran': 2}]
-
-
-def test_every_experiment_reaches_a_worker_exactly_once(sweep_module, monkeypatch):
-    sweep = sweep_module
-    submissions: list[tuple] = []
-
-    monkeypatch.setattr(sweep, 'run_experiment', lambda config, *args: {'ran': config['seed']})
-    monkeypatch.setattr(
-        sweep, 'multiprocessing', SimpleNamespace(get_context=lambda method: method)
-    )
-    monkeypatch.setattr(
-        sweep, 'ProcessPoolExecutor', lambda **kwargs: FakeExecutor(submissions, **kwargs)
+    outcomes = sweep.run_experiments(
+        [experiment_config(42, tmp_path)], num_workers=8, worker=report_this_process
     )
 
-    experiments = [{'seed': seed} for seed in (1, 2, 3)]
-    outcomes = sweep.run_experiments(experiments, num_workers=2)
-
-    assert [config for (config,) in submissions] == experiments
-    assert sorted(outcome['ran'] for outcome in outcomes) == [1, 2, 3]
+    assert [outcome['pid'] for outcome in outcomes] == [os.getpid()]
 
 
-def test_no_more_workers_are_started_than_there_are_experiments(sweep_module, monkeypatch):
+def test_one_worker_runs_every_experiment_in_this_process(sweep_module, tmp_path):
     sweep = sweep_module
-    started: list = []
+    experiments = [experiment_config(seed, tmp_path) for seed in (1, 2)]
 
-    monkeypatch.setattr(sweep, 'run_experiment', lambda config, *args: {})
-    monkeypatch.setattr(
-        sweep, 'multiprocessing', SimpleNamespace(get_context=lambda method: method)
+    outcomes = sweep.run_experiments(experiments, num_workers=1, worker=report_this_process)
+
+    assert [outcome['pid'] for outcome in outcomes] == [os.getpid(), os.getpid()]
+    assert [outcome['seed'] for outcome in outcomes] == [1, 2]
+
+
+def test_every_experiment_reaches_a_worker_exactly_once(sweep_module, tmp_path):
+    sweep = sweep_module
+    experiments = [experiment_config(seed, tmp_path) for seed in (1, 2, 3)]
+
+    outcomes = sweep.run_experiments(experiments, num_workers=2, worker=report_this_process)
+
+    assert sorted(outcome['seed'] for outcome in outcomes) == [1, 2, 3]
+    assert len({outcome['pid'] for outcome in outcomes}) == 3, 'each got its own process'
+
+
+def test_no_more_experiments_run_at_once_than_the_worker_count(sweep_module, tmp_path):
+    """The count is a limit on what runs together, not on how many are queued:
+    every experiment above it waits for a process to free up."""
+    sweep = sweep_module
+    experiments = [experiment_config(seed, tmp_path) for seed in (1, 2, 3, 4)]
+
+    outcomes = sweep.run_experiments(experiments, num_workers=2, worker=record_concurrency)
+
+    assert max(outcome['live'] for outcome in outcomes) <= 2
+
+
+# ── a worker killed outright loses its own experiment and no other ────────────
+
+def experiment_config(seed: int, db_dir) -> dict:
+    return {
+        'seed': seed,
+        'model': 'fake-model',
+        'task': 'babyai',
+        'mas_type': 'autogen',
+        'mas_memory': 'empty',
+        'use_validator': False,
+        'intrinsic_cross_task': False,
+        'db_dir': str(db_dir),
+        'failed_experiments_filename': 'failed_experiments.csv',
+    }
+
+
+def test_an_experiment_whose_worker_is_killed_does_not_take_the_others_with_it(
+    sweep_module, tmp_path
+):
+    """A worker can die on a signal, which leaves no exception to catch: the
+    module's contract is that each experiment is isolated, and a killed one must
+    cost its own row rather than the whole run."""
+    sweep = sweep_module
+    experiments = [experiment_config(seed, tmp_path) for seed in (1, 2, 3)]
+
+    outcomes = sweep.run_experiments(
+        experiments, num_workers=3, worker=kill_this_worker_on_seed_2
     )
-    monkeypatch.setattr(
-        sweep, 'ProcessPoolExecutor', lambda **kwargs: FakeExecutor(started, **kwargs)
+
+    by_seed = {outcome['seed']: outcome for outcome in outcomes}
+    assert sorted(by_seed) == [1, 2, 3], 'every experiment must be accounted for'
+    assert by_seed[1]['status'] == 'success', 'a healthy sibling was lost'
+    assert by_seed[3]['status'] == 'success', 'a healthy sibling was lost'
+    assert by_seed[2]['status'] == 'failed'
+
+
+def test_a_killed_worker_is_recorded_where_a_failed_experiment_is_recorded(
+    sweep_module, tmp_path
+):
+    """The worker cannot write its own failure once it is gone, so the parent
+    writes it: `main` reports failures from the path the row went to."""
+    sweep = sweep_module
+    experiments = [experiment_config(seed, tmp_path) for seed in (1, 2)]
+
+    outcomes = sweep.run_experiments(
+        experiments, num_workers=2, worker=kill_this_worker_on_seed_2
     )
 
-    sweep.run_experiments([{'seed': 1}, {'seed': 2}], num_workers=32)
+    killed = next(outcome for outcome in outcomes if outcome['status'] == 'failed')
+    assert 'failed_path' in killed, 'main reads this path to point at the row'
+    assert pathlib.Path(killed['failed_path']).exists()
+    assert 'SIGKILL' in killed['error'] or '9' in killed['error']
 
-    assert len(started) == 2
 
-
-def _refuse_to_be_used(*args, **kwargs):
-    raise AssertionError("a worker pool was spawned for work that runs in this process")
 
 
 # ── C2 · two seeds of one config are kept apart ───────────────────────────────
