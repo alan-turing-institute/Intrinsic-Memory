@@ -4,7 +4,8 @@ A model is a whole serving configuration, not just a name: the ones here need
 different vLLM builds, different weights locations and different flags, and
 getting one of those wrong costs a whole allocation before anything says so.
 
-Add a model by adding a `Model` here, then bring it up once with
+Add a model by adding a `Model` here, fetching its weights with
+`slurm/fetch_model.sh`, then bringing it up once with
 `slurm/generate_slurm.py smoke --model <slug>` before pointing a sweep at it.
 """
 from dataclasses import dataclass, field
