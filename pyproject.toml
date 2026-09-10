@@ -252,7 +252,3 @@ select = ["E4", "E7", "E9", "F"]
 # F601: predicate_map has 5 duplicate keys - PDDL domains overwrite each other's
 # predicate wording. Real bug, Phase 3 splits it per domain.
 "tasks/envs/pddl_env/pddl_env.py" = ["F601", "E402"]
-
-# Imports sit after the credentials skip guard on purpose.
-"tasks/tests/test_autogen_validator_integration.py" = ["E402"]
-
