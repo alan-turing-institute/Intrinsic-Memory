@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import logging
+import os
 
 from .memory_base import MASMemoryBase
 from .prompt import (
@@ -38,7 +39,23 @@ class IntrinsicMASMemory(MASMemoryBase):
     def __post_init__(self):
         super().__post_init__()
         self.counter: int = 0
-        self.agent_intrinsic_memory: str = ""
+        self._memory_path: str = os.path.join(self.persist_dir, 'intrinsic_memory.txt')
+        self.agent_intrinsic_memory: str = self._carried_memory()
+
+    def _carried_memory(self) -> str:
+        """What an earlier pass of this same experiment was carrying, if resuming one.
+
+        Only a resumed pass reads it. A rerun starts the dataset from the first
+        task, and a memory built from the tasks after it would not be the arm
+        being measured.
+        """
+        if not (self.global_config.get('intrinsic_cross_task', False)
+                and self.global_config.get('resume', False)):
+            return ""
+        if not os.path.exists(self._memory_path):
+            return ""
+        with open(self._memory_path, encoding='utf-8') as reader:
+            return reader.read()
 
     def summarize(self, *, solver_message: str = "", template_instructions: str = "") -> str:
 
@@ -79,7 +96,10 @@ class IntrinsicMASMemory(MASMemoryBase):
         carried into the next task.
         """
         self.counter = 0
-        if not self.global_config.get('intrinsic_cross_task', False):
+        if self.global_config.get('intrinsic_cross_task', False):
+            with open(self._memory_path, 'w', encoding='utf-8') as writer:
+                writer.write(self.agent_intrinsic_memory)
+        else:
             self.agent_intrinsic_memory = ""
 
         # reset self.llm_model, but keep accounting on the same tracker so
