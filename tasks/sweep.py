@@ -161,7 +161,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--num_workers', type=int, default=num_cpus, help='Number of worker processes for parallel experiment execution.')
     parser.add_argument('--resume', action='store_true',
                         help='Skip the experiments already recorded in the overall results '
-                             'file, instead of appending a second row for each of them.')
+                             'file, instead of appending a second row for each of them, and '
+                             'within an experiment skip the tasks already in its task results '
+                             'file. A dataset larger than one wall clock needs several passes, '
+                             'and without this each one starts again at the first task.')
 
     # file paths
     parser.add_argument('--db_dir', type=str, default='./.db', help='Directory to store results, logs, and memory persistence for this run.')

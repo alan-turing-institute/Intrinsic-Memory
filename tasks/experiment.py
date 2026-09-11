@@ -167,10 +167,33 @@ def build_mas(
     task_manager.mas.add_observer(task_manager.recorder)  
     task_manager.mas.build_system(reasoning_module, mas_memory_module, task_manager.env, task_manager.mas_config)
 
+def restore_completed(task_manager: TaskManager, completed: dict) -> None:
+    """Put the tasks an earlier pass scored back into this run's totals.
+
+    The episodes and the token counts both have to come back: the finished
+    experiment reports means over the whole dataset and a spend for all of it,
+    and a resumed pass has neither in hand.
+    """
+    for task_id in sorted(completed):
+        measurements = completed[task_id]
+        task_manager.recorder.episodes.append(
+            EpisodeResult(
+                reward=measurements.reward,
+                done=measurements.done,
+                trials=measurements.trials,
+            )
+        )
+        task_manager.token_tracker.add(
+            TokenTracker(**{column: getattr(measurements, column)
+                            for column in results.TOKEN_COLUMNS})
+        )
+
+
 def run_task(
     task_manager: TaskManager,
     working_dir: str,
     failed_tasks_filename: str,
+    resume: bool = False,
 ) -> None:
     task_manager.recorder.dataset_begin()
     task_results_path = results.task_results_path(
@@ -180,9 +203,29 @@ def run_task(
         working_dir, task_manager.task_name, task_manager.memory_type, task_manager.seed
     )
 
+    # A task is identified by its position in the dataset, so resuming is only
+    # sound while that order is the one the earlier pass saw.
+    completed: dict = (
+        results.completed_tasks(
+            task_results_path,
+            results.experiment_key({**task_manager.identity(), 'seed': task_manager.seed}),
+        )
+        if resume else {}
+    )
+    if completed:
+        restore_completed(task_manager, completed)
+        print(
+            f'resuming {task_manager.task_name}/{task_manager.memory_type} '
+            f'seed={task_manager.seed}: {len(completed)} of {len(task_manager.tasks)} '
+            f'tasks already scored',
+            file=sys.stderr,
+        )
+
     failed_tasks: list[dict] = []
 
     for task_id, task_config in tqdm(enumerate(task_manager.tasks), total=len(task_manager.tasks), desc="Running Tasks"):
+        if task_id in completed:
+            continue
         before = task_manager.token_tracker.snapshot()
         try:
             task_manager.recorder.task_begin(task_id, task_config)
@@ -345,10 +388,12 @@ def run_experiment(experiment_config: dict) -> dict:
             working_dir=memory_dir,
             hop=hop,
             intrinsic_cross_task=intrinsic_cross_task,
+            resume=experiment_config.get('resume', False),
         )
 
         build_mas(task_configs, reasoning_type, mas_memory_type, model_type)
-        run_task(task_configs, working_dir, failed_tasks_filename)
+        run_task(task_configs, working_dir, failed_tasks_filename,
+                 resume=experiment_config.get('resume', False))
 
         tracker = task_configs.token_tracker
         completion_tokens, prompt_tokens = tracker.completion_tokens, tracker.prompt_tokens

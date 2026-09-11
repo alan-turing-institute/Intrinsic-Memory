@@ -77,6 +77,11 @@ class TokenTracker:
             self.intrinsic_prompt_tokens += prompt_tokens
             self.intrinsic_completion_tokens += completion_tokens
 
+    def add(self, other: "TokenTracker") -> None:
+        """Fold another tracker's counts into this one."""
+        for field in fields(self):
+            setattr(self, field.name, getattr(self, field.name) + getattr(other, field.name))
+
     def snapshot(self) -> "TokenTracker":
         """The counts as they stand, detached from further recording."""
         return TokenTracker(**{field.name: getattr(self, field.name) for field in fields(self)})

@@ -235,6 +235,28 @@ def recorded_experiments(path: str) -> set[tuple[str, ...]]:
         }
 
 
+def completed_tasks(path: str, key: tuple[str, ...]) -> dict[int, TaskMeasurements]:
+    """What one experiment has already scored, by task id, from its task rows.
+
+    The file holds every seed and both cross-task settings of an arm, so the row
+    decides which experiment it belongs to, not the filename.
+    """
+    if not os.path.exists(path):
+        return {}
+
+    with open(path, newline='', encoding='utf-8') as reader:
+        return {
+            int(row['task_id']): TaskMeasurements(
+                reward=float(row['reward']),
+                done=row['done'] == 'True',
+                trials=int(row['trials']) if row['trials'] else None,
+                **{column: int(row[column]) for column in TOKEN_COLUMNS},
+            )
+            for row in csv.DictReader(reader)
+            if tuple(str(row.get(column, '')) for column in KEY_COLUMNS) == key
+        }
+
+
 def remove_progress(path: str) -> None:
     """Drop the crash-recovery file, once the result it was protecting is written."""
     if os.path.exists(path):
