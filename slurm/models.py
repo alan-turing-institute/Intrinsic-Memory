@@ -27,6 +27,10 @@ class Model:
     `served` is what `vllm serve` is given - a local snapshot path or a Hub id.
     `vllm_dir` holds the `.venv` that serves; it is not the experiment venv.
 
+    `hf_home` is exported for the whole job, so it has to be writable: the
+    experiment processes fetch the retriever's embedding model through it, long
+    after `vllm serve` has read the weights `served` names.
+
     The size fields are this model's defaults, not fixed values: what a
     checkpoint and a node can carry differ per model, so they cannot be one
     number for all of them, and `generate_slurm.py` takes a flag for each.
@@ -60,7 +64,7 @@ GPT_OSS_120B = Model(
     name="openai/gpt-oss-120b",
     served=f"{SHARED_HF_HOME}/hub/models--openai--gpt-oss-120b/snapshots/{GPT_OSS_SNAPSHOT}/",
     vllm_dir="~/vllm_test",
-    hf_home=SHARED_HF_HOME,
+    hf_home=f"{PROJECT_DIR}/hf",
     # These three override the shared GPT-OSS_Hopper.yaml, which sets them to
     # 8192, 10240 and off. On this node the KV cache holds 3,730,336 tokens, 227
     # of them at max_model_len, so a queue deeper than that is a number the
