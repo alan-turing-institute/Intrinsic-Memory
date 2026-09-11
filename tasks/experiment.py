@@ -183,7 +183,7 @@ def restore_completed(task_manager: TaskManager, completed: dict) -> None:
                 trials=measurements.trials,
             )
         )
-        task_manager.token_tracker.add(
+        task_manager.token_tracker.fold_tokens(
             TokenTracker(**{column: getattr(measurements, column)
                             for column in results.TOKEN_COLUMNS})
         )
