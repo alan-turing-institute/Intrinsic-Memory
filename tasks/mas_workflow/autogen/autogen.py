@@ -220,8 +220,7 @@ class AutoGen(MetaMAS):
                 break
 
             name: str = solver.name
-            system_instruction = solver.system_instruction
-            
+
             if self._solver_stuck(action, action_history):
                 user_prompt: str = format_task_prompt_with_insights(
                     few_shots=few_shots, 
@@ -242,12 +241,9 @@ class AutoGen(MetaMAS):
                     trials = None
                     break
                 name: str = ground_truth.name
-                system_instruction = ground_truth.system_instruction
             
             agent_message: AgentMessage = AgentMessage(
                 agent_name=name,
-                system_instruction=system_instruction,
-                user_instruction=user_prompt,
                 message=action,
             )
             self.meta_memory.add_agent_node(agent_message, upstream_agent_ids=[])
