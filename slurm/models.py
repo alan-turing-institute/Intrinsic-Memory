@@ -1,6 +1,6 @@
 """The models a sweep can be pointed at, and what each needs to be served.
 
-A model is a whole serving configuration, not just a name: the two here need
+A model is a whole serving configuration, not just a name: the ones here need
 different vLLM builds, different weights locations and different flags, and
 getting one of those wrong costs a whole allocation before anything says so.
 
@@ -122,5 +122,27 @@ QWEN36_35B_A3B = Model(
     ),
 )
 
-MODELS = {model.slug: model for model in (GPT_OSS_120B, QWEN36_35B_A3B)}
+MISTRAL_7B_V03 = Model(
+    slug="mistral-7b-v0.3",
+    name="mistralai/Mistral-7B-Instruct-v0.3",
+    served="mistralai/Mistral-7B-Instruct-v0.3",
+    # vLLM 0.28.0, the venv Qwen3.6 and Gemma 4 are served from.
+    vllm_dir="~/vllm_qwen36",
+    hf_home=f"{PROJECT_DIR}/hf",
+    # The checkpoint's own maximum, not a choice: max_position_embeddings is
+    # 32768, so the 65536 the other two are served at is not available here.
+    max_model_len=32768,
+    max_num_batched_tokens=8192,
+    max_num_seqs=512,
+    extra_serve_flags=("--enable-prefix-caching",),
+    extra_env=(("VLLM_USE_FLASHINFER_SAMPLER", "0"),),
+    notes=(
+        "Dense 7.2B, Apache-2.0, vLLM 0.28.0. It does not think, so it needs no reasoning "
+        "parser and no thinking budget, and the per-dataset token budgets transfer from "
+        "gpt-oss unchanged. Its chat template takes one optional leading system message and "
+        "folds it into the last user turn, which is the [system, user] pair mas/agents sends."
+    ),
+)
+
+MODELS = {model.slug: model for model in (GPT_OSS_120B, QWEN36_35B_A3B, MISTRAL_7B_V03)}
 DEFAULT_MODEL = GPT_OSS_120B.slug
