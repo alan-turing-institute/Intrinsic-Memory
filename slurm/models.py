@@ -82,7 +82,7 @@ QWEN36_35B_A3B = Model(
     slug="qwen3.6-35b-a3b",
     name="Qwen/Qwen3.6-35B-A3B",
     served="Qwen/Qwen3.6-35B-A3B",
-    vllm_dir="~/vllm_qwen36",
+    vllm_dir="~/vllm-0.28.0",
     # Not the shared cache and not home: one bf16 checkpoint of this size is
     # 72 GB, and home is quota'd well below that.
     hf_home=f"{PROJECT_DIR}/hf",
@@ -126,14 +126,13 @@ MISTRAL_7B_V03 = Model(
     slug="mistral-7b-v0.3",
     name="mistralai/Mistral-7B-Instruct-v0.3",
     served="mistralai/Mistral-7B-Instruct-v0.3",
-    # vLLM 0.28.0, the venv Qwen3.6 and Gemma 4 are served from.
-    vllm_dir="~/vllm_qwen36",
+    vllm_dir="~/vllm-0.28.0",
     hf_home=f"{PROJECT_DIR}/hf",
     # The checkpoint's own maximum, not a choice: max_position_embeddings is
     # 32768, so the 65536 the other two are served at is not available here.
     max_model_len=32768,
     max_num_batched_tokens=8192,
-    max_num_seqs=512,
+    max_num_seqs=256,
     extra_serve_flags=("--enable-prefix-caching",),
     extra_env=(("VLLM_USE_FLASHINFER_SAMPLER", "0"),),
     notes=(
