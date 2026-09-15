@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from abc import ABC
 from typing import Optional, Protocol, Self, runtime_checkable
 
@@ -46,17 +46,8 @@ class MASMemoryBase(StorageNameSpace, ABC):
         os.makedirs(self.persist_dir, exist_ok=True)
         
     def for_namespace(self, suffix: str) -> Self:
-        """Create a fresh sibling with the same dependencies and a suffixed namespace.
-
-        Runtime state is initialized by the sibling's constructor, not copied.
-        Subclasses with extra constructor arguments can override this factory.
-        """
-        return type(self)(
-            namespace=self.namespace + suffix,
-            global_config=self.global_config,
-            llm_model=self.llm_model,
-            embedding_func=self.embedding_func,
-        )
+        """Create a fresh sibling with the same configuration and a suffixed namespace."""
+        return replace(self, namespace=self.namespace + suffix)
 
     # ---------------------------------- inside-trial memory ----------------------------------
     # Called by Autogen to set the current task context.

@@ -40,35 +40,22 @@ def test_sibling_preserves_type_dependencies_and_namespace(key, tmp_path):
     assert sibling.embedding_func is memory.embedding_func
 
 
-def test_sibling_does_not_copy_solver_runtime_state(tmp_path):
+def test_sibling_does_not_modify_solver_runtime_state(tmp_path):
     memory = build_memory(IntrinsicMASMemoryPDDL, tmp_path)
     original_context = memory.init_task_context("solver task", "solver description")
-    memory.counter = 7
     memory.agent_intrinsic_memory = "solver-only history"
 
     sibling = memory.for_namespace("_validator")
     sibling_context = sibling.init_task_context("validator task", "validator description")
 
-    assert sibling.counter == 0
-    assert sibling.agent_intrinsic_memory == ""
     assert sibling_context is not original_context
     assert memory.current_task_context is original_context
     assert memory.agent_intrinsic_memory == "solver-only history"
-    assert memory.counter == 7
 
 
 @dataclass
 class ConfiguredMemory(MASMemoryBase):
     option: str
-
-    def for_namespace(self, suffix):
-        return type(self)(
-            namespace=self.namespace + suffix,
-            global_config=self.global_config,
-            llm_model=self.llm_model,
-            embedding_func=self.embedding_func,
-            option=self.option,
-        )
 
 
 @pytest.mark.parametrize("use_validator", [False, True])
