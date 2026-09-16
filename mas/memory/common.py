@@ -29,18 +29,19 @@ class StorageNameSpace:
 class AgentMessage:
     """
     AgentMessage represents a structured message exchanged between agents,
-    including optional instructions and metadata.
+    including optional metadata.
+
+    What an agent was prompted with is deliberately not here. A message becomes a
+    node of the interaction graph, one per trial, and the graph is stored for the
+    rest of the experiment: keeping the prompt would keep a copy of the whole
+    trajectory so far at every step of it.
 
     Attributes:
         agent_name (Optional[str]): The name of the agent sending or receiving the message.
-        system_instruction (Optional[str]): Optional system-level instruction guiding the agent's behavior.
-        user_instruction (Optional[str]): Optional user-level instruction or query.
         message (Optional[str]): The core message content (response or statement).
         extra_fields (dict[str, Any]): A dictionary to hold additional custom fields or metadata.
     """
     agent_name: Optional[str] = None
-    system_instruction: Optional[str] = None
-    user_instruction: Optional[str]  = None
     message: Optional[str] = None
     extra_fields: dict[str, Any] = field(default_factory=dict)
 

@@ -149,7 +149,7 @@ Flags marked **(sweep)** accept multiple values (`nargs='+'`). Any flag given mo
 | `--reasoning` | `io` | Reasoning module |
 | `--model` (sweep) | `gpt-3.5-turbo-0125` | LLM model name, as recognized by your `OPENAI_API_BASE` backend |
 | `--max_trials` | each task's `max_steps` | Trials one episode gets. Unset, the budget comes from that task's entry in `tasks/configs.yaml` (30 for all but Jericho, which is 100); given, it overrides every task in the sweep |
-| `--max_tasks` | each task's `max_tasks` | How many tasks of the dataset a run covers. Unset, from `tasks/configs.yaml` (only FEVER and HotpotQA set one, both at 200) and otherwise the whole dataset — 56 games for Jericho and 200 level-and-seed pairs for BabyAI; given, it overrides every task in the sweep. `--max_tasks 2` is what makes a smoke run short |
+| `--max_tasks` | each task's `max_tasks` | How many tasks of the dataset a run covers. Unset, from `tasks/configs.yaml` (only FEVER and HotpotQA set one, both at 200) and otherwise the whole dataset — 55 games for Jericho and 200 level-and-seed pairs for BabyAI; given, it overrides every task in the sweep. `--max_tasks 2` is what makes a smoke run short |
 | `--successful_topk` | `1` | Number of successful trajectories retrieved from memory |
 | `--failed_topk` | `0` | Number of failed trajectories retrieved from memory |
 | `--insights_topk` | `3` | Number of insights retrieved from memory |
@@ -279,7 +279,7 @@ data
 └── jericho
     └── jericho_games.jsonl
     └── roms
-        └── 905.z5 ... ztuu.z5      # the 56 game files, downloaded separately
+        └── 905.z5 ... ztuu.z5      # the game files, downloaded separately
 └── babyai
     └── babyai_levels.jsonl
 └── sciworld
@@ -290,7 +290,7 @@ Each dataset is parsed only when a task asks for it, so a FEVER-only run does no
 
 FEVER and HotpotQA both drive live Wikipedia through their `Search` and `Lookup` actions, so those two need outbound network from wherever the run happens; the other five are self-contained once their simulator is installed.
 
-The manifests are checked in, but the data they name is not. Jericho's lists 56 games and needs the rom files themselves under `data/jericho/roms/`; ALFWorld's names a `.tw-pddl` game file per task and needs those under `data/alfworld/json_2.1.1/`. `data/data.md` has both commands. BabyAI needs no download at all — `minigrid` generates each gridworld from the level name and seed in the manifest.
+The manifests are checked in, but the data they name is not. Jericho's lists 55 games and needs the rom files themselves under `data/jericho/roms/`; ALFWorld's names a `.tw-pddl` game file per task and needs those under `data/alfworld/json_2.1.1/`. `data/data.md` has both commands. BabyAI needs no download at all — `minigrid` generates each gridworld from the level name and seed in the manifest.
 
 ### 🔑 Add API keys in template.env and change its name to .env
 ```
