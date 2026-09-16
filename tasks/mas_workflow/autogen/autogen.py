@@ -86,12 +86,7 @@ class AutoGen(MetaMAS):
             ))
             # Its own instance, so solver and validator updates cannot overwrite
             # each other.
-            self.meta_memory_validator = mas_memory.__class__(
-                namespace=mas_memory.namespace + "_validator",
-                global_config=mas_memory.global_config,
-                llm_model=mas_memory.llm_model,
-                embedding_func=mas_memory.embedding_func,
-            )
+            self.meta_memory_validator = mas_memory.for_namespace("_validator")
 
         self.hire(team)
         self.set_env(env)

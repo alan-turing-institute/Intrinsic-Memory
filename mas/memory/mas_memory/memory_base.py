@@ -1,7 +1,7 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from abc import ABC
-from typing import Optional, Protocol, runtime_checkable
+from typing import Optional, Protocol, Self, runtime_checkable
 
 from ...utils import EmbeddingFunc
 from ..common import (
@@ -45,6 +45,10 @@ class MASMemoryBase(StorageNameSpace, ABC):
         self.persist_dir: str = os.path.join(self.global_config['working_dir'], self.namespace)
         os.makedirs(self.persist_dir, exist_ok=True)
         
+    def for_namespace(self, suffix: str) -> Self:
+        """Create a fresh sibling with the same configuration and a suffixed namespace."""
+        return replace(self, namespace=self.namespace + suffix)
+
     # ---------------------------------- inside-trial memory ----------------------------------
     # Called by Autogen to set the current task context.
     def init_task_context( 
