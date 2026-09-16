@@ -21,7 +21,7 @@ import os
 import sys
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping
 
 from mas.llm import TokenTracker
 
@@ -175,6 +175,11 @@ def identity(
     }
 
 
+def experiment_key(values: Mapping[str, object]) -> tuple[str, ...]:
+    """Build the canonical resume key from a mapping such as TaskManager.identity()."""
+    return tuple(str(values[column]) for column in KEY_COLUMNS)
+
+
 def aggregate_row(
     *,
     identity_fields: dict,
@@ -217,12 +222,6 @@ def task_row(
         'seed': seed,
     }
 
-
-def experiment_key(config: dict) -> tuple[str, ...]:
-    """Which experiment a config is, as the strings a written row would carry."""
-    return tuple(str(config.get(column, '')) for column in KEY_COLUMNS)
-
-
 def recorded_experiments(path: str) -> set[tuple[str, ...]]:
     """The key of every experiment already in a results file."""
     if not os.path.exists(path):
@@ -230,7 +229,7 @@ def recorded_experiments(path: str) -> set[tuple[str, ...]]:
 
     with open(path, newline='', encoding='utf-8') as reader:
         return {
-            tuple(str(row.get(column, '')) for column in KEY_COLUMNS)
+            tuple(str(row[column]) for column in KEY_COLUMNS)
             for row in csv.DictReader(reader)
         }
 
