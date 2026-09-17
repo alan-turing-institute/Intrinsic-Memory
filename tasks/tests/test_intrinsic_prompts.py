@@ -124,7 +124,7 @@ def test_the_module_carries_the_expected_update_prompt(key):
 
 @pytest.mark.parametrize('key', INTRINSIC_KEYS)
 def test_the_update_prompt_accepts_every_field_summarize_formats(key):
-    """`summarize` formats five fields in; a prompt missing a slot drops one silently."""
+    """`summarize` formats six fields in; a prompt missing a slot drops one silently."""
     prompt = build(key).memory_update_prompt
 
     formatted = prompt.format(
@@ -133,9 +133,10 @@ def test_the_update_prompt_accepts_every_field_summarize_formats(key):
         task_description='DESCRIPTION',
         task_trajectory='TRAJECTORY',
         current_memory='MEMORY',
+        word_limit='LIMIT',
     )
 
-    for field in ('DESCRIPTION', 'TRAJECTORY', 'MEMORY'):
+    for field in ('DESCRIPTION', 'TRAJECTORY', 'MEMORY', 'LIMIT'):
         assert field in formatted, f"{key}'s update prompt drops {field}"
 
 # ── a memory built from another's class carries the same prompts ──────────────

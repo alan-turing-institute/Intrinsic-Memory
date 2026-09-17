@@ -108,6 +108,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help='keep an intrinsic memory across the tasks of a dataset instead of '
                              'starting each task from an empty one. No effect on the other memory '
                              'modules, which accumulate across tasks either way.')
+    parser.add_argument('--memory_word_limit', type=int, default=None,
+                        help='Words an intrinsic memory module may write per update. The '
+                             'module rewrites its whole memory on every step, so what it '
+                             'writes is most of what the arm spends; left unset nothing '
+                             'bounds it. No effect on the other memory modules.')
 
     # llm config
     parser.add_argument('--max_tokens', type=int, default=2048,

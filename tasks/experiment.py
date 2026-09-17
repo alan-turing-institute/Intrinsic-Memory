@@ -388,6 +388,7 @@ def run_experiment(experiment_config: dict) -> dict:
             working_dir=memory_dir,
             hop=hop,
             intrinsic_cross_task=intrinsic_cross_task,
+            memory_word_limit=experiment_config.get('memory_word_limit'),
             resume=experiment_config.get('resume', False),
         )
 

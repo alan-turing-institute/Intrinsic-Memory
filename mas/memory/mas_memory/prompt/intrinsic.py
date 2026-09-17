@@ -23,9 +23,19 @@ Use your latest response to create the new memory with factual information to so
 ## Current Memory
 
 {current_memory}
-
+{word_limit}
 ## New Memory
 
+"""
+
+# Rendered immediately before the memory is written rather than with the rest of
+# the instructions: on a long episode the trajectory above runs to thousands of
+# tokens, and an instruction that far from the generation is one the model has
+# stopped attending to.
+MEMORY_WORD_LIMIT = """
+## Length Limit
+
+The new memory must be {word_limit} words or fewer. Drop the least useful detail to stay within it.
 """
 
 @dataclass

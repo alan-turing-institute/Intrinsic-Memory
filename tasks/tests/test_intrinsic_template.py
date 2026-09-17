@@ -99,6 +99,7 @@ def test_the_update_prompt_is_the_module_prompt_with_the_template_filled_in():
         task_description="a description of the task",
         task_trajectory=TRAJECTORY,
         current_memory="",
+        word_limit="",
     )
     assert expected.strip() in updates[0], (
         "the first update prompt is not this module's prompt carrying the "

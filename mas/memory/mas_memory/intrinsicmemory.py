@@ -13,6 +13,7 @@ from .prompt import (
     INTRINSICMEMORY_NOTEMPLATE,
     INTRINSICMEMORY_PDDL,
     INTRINSICMEMORY_SCIWORLD,
+    MEMORY_WORD_LIMIT,
 )
 from ..common import MASMessage # a MASMessage, which is a specific type of message used in MAS
 from mas.llm import Message, GPTChat # a "normal" message, not a MASMessage?
@@ -57,6 +58,11 @@ class IntrinsicMASMemory(MASMemoryBase):
         with open(self._memory_path, encoding='utf-8') as reader:
             return reader.read()
 
+    def _word_limit_instruction(self) -> str:
+        """How many words the memory may run to, or nothing where it is unbounded."""
+        limit = self.global_config.get('memory_word_limit')
+        return "" if limit is None else MEMORY_WORD_LIMIT.format(word_limit=limit)
+
     def summarize(self, *, solver_message: str = "", template_instructions: str = "") -> str:
 
         """UPDATE AGENT MEMORY STEP"""
@@ -73,6 +79,7 @@ class IntrinsicMASMemory(MASMemoryBase):
                 task_description=mas_message.task_description,
                 task_trajectory=mas_message.task_trajectory,
                 current_memory=self.agent_intrinsic_memory,
+                word_limit=self._word_limit_instruction(),
         )
 
         messages = [Message("system", self.system_prompt), Message("user", memory_update_prompt)]
