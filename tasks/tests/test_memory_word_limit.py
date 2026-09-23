@@ -8,12 +8,15 @@ takes its own path through `summarize` fails here rather than going uncovered.
 """
 
 import tempfile
+from dataclasses import asdict
+from types import SimpleNamespace
 
 import pytest
 
 from mas.llm import TokenTracker
 from mas.memory.mas_memory.prompt import MEMORY_WORD_LIMIT
 from mas.module_map import MAS_MEMORY_MODULES
+from tasks import results
 
 from tasks.tests.fakes import FakeEmbeddingFunc, FakeLLM
 from tasks.tests.test_intrinsic_tokens import INTRINSIC_KEYS, TRAJECTORY
@@ -65,3 +68,47 @@ def test_the_limit_is_stated_alongside_the_memory_it_bounds(key):
     assert prompt.index(MEMORY_WORD_LIMIT.format(word_limit=200)) > prompt.index(
         '## Current Memory'
     ), f'{key} states the word limit before the memory rather than beside it'
+
+
+def test_two_limits_are_two_experiments():
+    """`--resume` skips an experiment whose key a results file already carries, so a
+    limit outside the key makes every arm after the first a silent no-op."""
+    assert 'memory_word_limit' in results.IDENTITY_COLUMNS, (
+        'the word limit is not part of what identifies an experiment'
+    )
+
+    arm = {'model': 'm', 'task': 'alfworld', 'mas_type': 'autogen',
+           'mas_memory': 'intrinsicmemory-alfworld', 'use_validator': False,
+           'intrinsic_cross_task': False, 'seed': 0}
+
+    assert (results.experiment_key({**arm, 'memory_word_limit': 100})
+            != results.experiment_key({**arm, 'memory_word_limit': 200})), (
+        'two word limits key as the same experiment, so the second would be skipped'
+    )
+
+
+@pytest.mark.parametrize('limit', [None, 100])
+def test_a_finished_experiment_keys_as_the_row_it_wrote(tmp_path, limit):
+    """`--resume` matches a config against rows read back from a CSV. An unset limit
+    leaves the config holding None and the file holding a blank, and an arm whose two
+    spellings disagree is rerun on every resubmission however often it finishes."""
+    fields = {'model': 'm', 'task': 'alfworld', 'mas_type': 'autogen',
+              'mas_memory': 'intrinsicmemory-alfworld', 'use_validator': False,
+              'intrinsic_cross_task': False}
+    path = str(tmp_path / 'overall_results.csv')
+
+    results.write_row(path, results.AGGREGATE_COLUMNS, {
+        **results.identity(**fields, memory_word_limit=limit),
+        'max_trials': 30,
+        **asdict(results.Measurements.of(
+            SimpleNamespace(mean_reward=0.0, mean_done=0.0, mean_trials=0.0, episode_count=1),
+            TokenTracker(),
+        )),
+        'seed': 0,
+    })
+
+    key = results.experiment_key({**fields, 'memory_word_limit': limit, 'seed': 0})
+
+    assert key in results.recorded_experiments(path), (
+        f'an experiment at limit {limit} does not key as the row it wrote, so it would rerun'
+    )

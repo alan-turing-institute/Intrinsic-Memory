@@ -30,12 +30,13 @@ if TYPE_CHECKING:
     from tasks.envs.base_env import AggregateResults
 
 
-def _tokens(tracker: TokenTracker) -> dict:
+def _spend(tracker: TokenTracker) -> dict:
     return {
         'completion_tokens': tracker.completion_tokens,
         'prompt_tokens': tracker.prompt_tokens,
         'intrinsic_completion_tokens': tracker.intrinsic_completion_tokens,
         'intrinsic_prompt_tokens': tracker.intrinsic_prompt_tokens,
+        'intrinsic_updates': tracker.intrinsic_updates,
     }
 
 
@@ -56,6 +57,7 @@ class Measurements:
     prompt_tokens: int
     intrinsic_completion_tokens: int
     intrinsic_prompt_tokens: int
+    intrinsic_updates: int
 
     @classmethod
     def of(cls, averages: "AggregateResults", tracker: TokenTracker) -> "Measurements":
@@ -64,7 +66,7 @@ class Measurements:
             mean_done=averages.mean_done,
             mean_trials=averages.mean_trials,
             tasks_scored=averages.episode_count,
-            **_tokens(tracker),
+            **_spend(tracker),
         )
 
 
@@ -84,6 +86,7 @@ class TaskMeasurements:
     prompt_tokens: int
     intrinsic_completion_tokens: int
     intrinsic_prompt_tokens: int
+    intrinsic_updates: int
 
     @classmethod
     def of(cls, episode: "EpisodeResult", spent: TokenTracker) -> "TaskMeasurements":
@@ -91,20 +94,22 @@ class TaskMeasurements:
             reward=episode.reward,
             done=episode.done,
             trials=episode.trials,
-            **_tokens(spent),
+            **_spend(spent),
         )
 
 
 # Which experiment a row belongs to.
 IDENTITY_COLUMNS: tuple[str, ...] = (
-    'model', 'task', 'mas_type', 'mas_memory', 'use_validator', 'intrinsic_cross_task'
+    'model', 'task', 'mas_type', 'mas_memory', 'use_validator', 'intrinsic_cross_task',
+    'memory_word_limit',
 )
 
 MEASUREMENT_COLUMNS: tuple[str, ...] = tuple(field.name for field in fields(Measurements))
 TASK_MEASUREMENT_COLUMNS: tuple[str, ...] = tuple(field.name for field in fields(TaskMeasurements))
 
-# The token counts, in the order they appear wherever they appear.
-TOKEN_COLUMNS: tuple[str, ...] = tuple(_tokens(TokenTracker()))
+# What a run spent, in the order it appears wherever it appears. `intrinsic_updates`
+# is what divides the intrinsic token counts into the size of one memory write.
+SPEND_COLUMNS: tuple[str, ...] = tuple(_spend(TokenTracker()))
 
 AGGREGATE_COLUMNS: tuple[str, ...] = (
     IDENTITY_COLUMNS + ('max_trials',) + MEASUREMENT_COLUMNS + ('seed',)
@@ -164,6 +169,7 @@ def identity(
     mas_memory: str,
     use_validator: bool,
     intrinsic_cross_task: bool,
+    memory_word_limit: int = None,
 ) -> dict:
     return {
         'model': model,
@@ -172,6 +178,7 @@ def identity(
         'mas_memory': mas_memory,
         'use_validator': use_validator,
         'intrinsic_cross_task': intrinsic_cross_task,
+        'memory_word_limit': memory_word_limit,
     }
 
 
@@ -218,9 +225,14 @@ def task_row(
     }
 
 
+def _key_value(value) -> str:
+    """An unset column reads back from a CSV as a blank, never as 'None'."""
+    return '' if value is None else str(value)
+
+
 def experiment_key(config: dict) -> tuple[str, ...]:
     """Which experiment a config is, as the strings a written row would carry."""
-    return tuple(str(config.get(column, '')) for column in KEY_COLUMNS)
+    return tuple(_key_value(config.get(column)) for column in KEY_COLUMNS)
 
 
 def recorded_experiments(path: str) -> set[tuple[str, ...]]:
@@ -230,7 +242,7 @@ def recorded_experiments(path: str) -> set[tuple[str, ...]]:
 
     with open(path, newline='', encoding='utf-8') as reader:
         return {
-            tuple(str(row.get(column, '')) for column in KEY_COLUMNS)
+            tuple(_key_value(row.get(column)) for column in KEY_COLUMNS)
             for row in csv.DictReader(reader)
         }
 
@@ -250,10 +262,10 @@ def completed_tasks(path: str, key: tuple[str, ...]) -> dict[int, TaskMeasuremen
                 reward=float(row['reward']),
                 done=row['done'] == 'True',
                 trials=int(row['trials']) if row['trials'] else None,
-                **{column: int(row[column]) for column in TOKEN_COLUMNS},
+                **{column: int(row[column]) for column in SPEND_COLUMNS},
             )
             for row in csv.DictReader(reader)
-            if tuple(str(row.get(column, '')) for column in KEY_COLUMNS) == key
+            if tuple(_key_value(row.get(column)) for column in KEY_COLUMNS) == key
         }
 
 

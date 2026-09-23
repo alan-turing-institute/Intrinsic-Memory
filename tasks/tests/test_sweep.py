@@ -467,3 +467,32 @@ def test_the_cross_task_arm_is_not_mistaken_for_the_baseline(
     )
 
     assert (remaining, already_done) == ([cross_task], 0)
+
+
+def test_several_word_limits_are_swept_like_any_other_flag(sweep_module):
+    """The limits have to be one grid, not one job each: a sweep runs its
+    experiments in a worker pool, so limits given separately would serve the same
+    model over and over and run the arms one behind another."""
+    sweep = sweep_module
+    args = parse(sweep, '--task', 'alfworld', '--mas_type', 'autogen',
+                 '--mas_memory', 'intrinsicmemory-alfworld',
+                 '--memory_word_limit', 'none', '200', '100')
+
+    limits = [config['memory_word_limit'] for config in sweep.build_experiment_configs(args)]
+
+    assert limits == [None, 200, 100], (
+        f'three word limits produced {limits} rather than one experiment each'
+    )
+
+
+def test_an_unnamed_word_limit_leaves_one_unbounded_experiment(sweep_module):
+    """Every arm measured so far ran without the flag, and must keep doing so."""
+    sweep = sweep_module
+    args = parse(sweep, '--task', 'alfworld', '--mas_type', 'autogen',
+                 '--mas_memory', 'intrinsicmemory-alfworld')
+
+    configs = sweep.build_experiment_configs(args)
+
+    assert [config['memory_word_limit'] for config in configs] == [None], (
+        'omitting the flag no longer means a single unbounded experiment'
+    )

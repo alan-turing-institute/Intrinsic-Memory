@@ -71,3 +71,32 @@ def test_another_memory_module_bills_nothing_intrinsic():
     assert (tracker.intrinsic_prompt_tokens, tracker.intrinsic_completion_tokens) == (0, 0), (
         "a non-intrinsic memory module's summary was billed to the intrinsic counters"
     )
+
+
+@pytest.mark.parametrize('key', INTRINSIC_KEYS)
+def test_each_update_is_counted_beside_what_it_spent(key):
+    """A total over an unknown number of updates cannot say how big one memory is.
+
+    Dividing by the count is the only way to tell a memory that obeyed a length
+    limit from a shorter episode that never tested it.
+    """
+    memory, tracker = build(key)
+
+    memory.summarize()
+    memory.summarize()
+
+    assert tracker.intrinsic_updates == 2, (
+        f'{key} counted {tracker.intrinsic_updates} updates for two summarize calls'
+    )
+
+
+def test_another_memory_module_counts_no_updates():
+    """The count divides the intrinsic token totals, so it takes the same calls."""
+    memory, tracker = build('chatdev')
+    memory.counter = 9
+
+    memory.summarize()
+
+    assert tracker.intrinsic_updates == 0, (
+        "a non-intrinsic memory module's summary was counted as an intrinsic update"
+    )

@@ -80,6 +80,7 @@ class TaskManager:
             mas_memory=self.memory_type,
             use_validator=self.mas_config.get('use_validator', False),
             intrinsic_cross_task=self.mem_config.get('intrinsic_cross_task', False),
+            memory_word_limit=self.mem_config.get('memory_word_limit'),
         )
 
 
@@ -185,7 +186,7 @@ def restore_completed(task_manager: TaskManager, completed: dict) -> None:
         )
         task_manager.token_tracker.fold_tokens(
             TokenTracker(**{column: getattr(measurements, column)
-                            for column in results.TOKEN_COLUMNS})
+                            for column in results.SPEND_COLUMNS})
         )
 
 
@@ -461,6 +462,7 @@ def _write_failed_experiment(
                 mas_memory=experiment_config.get('mas_memory', ''),
                 use_validator=experiment_config.get('use_validator', False),
                 intrinsic_cross_task=experiment_config.get('intrinsic_cross_task', False),
+                memory_word_limit=experiment_config.get('memory_word_limit'),
             ),
             'seed': experiment_config.get('seed', ''),
             **results.failure_fields(error),

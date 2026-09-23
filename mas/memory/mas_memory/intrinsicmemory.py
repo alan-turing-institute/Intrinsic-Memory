@@ -89,6 +89,7 @@ class IntrinsicMASMemory(MASMemoryBase):
         # only summarise after some history has been built up
         if len(mas_message.task_trajectory) > 5:
             self.agent_intrinsic_memory = self.llm_model(messages, intrinsic=True)
+            self.llm_model.tracker.record_update()
 
         summary_message = f"""{mas_message.task_description} \n\n### Agent Memory\n 
         {self.agent_intrinsic_memory} \n\n {mas_message.task_trajectory}"""

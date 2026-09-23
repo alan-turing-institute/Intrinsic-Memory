@@ -69,6 +69,7 @@ class TokenTracker:
     prompt_tokens: int = 0
     intrinsic_completion_tokens: int = 0
     intrinsic_prompt_tokens: int = 0
+    intrinsic_updates: int = 0
 
     def record(self, prompt_tokens: int, completion_tokens: int, intrinsic: bool = False) -> None:
         self.prompt_tokens += prompt_tokens
@@ -76,6 +77,15 @@ class TokenTracker:
         if intrinsic:
             self.intrinsic_prompt_tokens += prompt_tokens
             self.intrinsic_completion_tokens += completion_tokens
+
+    def record_update(self) -> None:
+        """One rewrite of a memory, whatever it cost.
+
+        Counted apart from the intrinsic token totals because not every call
+        billed to them is an update: the self-templating module generates its
+        template through the same counters, once per task.
+        """
+        self.intrinsic_updates += 1
 
     def fold_tokens(self, other: "TokenTracker") -> None:
         """Add another tracker's counts to this one, field by field."""

@@ -146,7 +146,8 @@ srun --nodes=1 --gpus=${SLURM_GPUS} --ntasks-per-node 1 \\
 
 
 def run_command(task: str, memories: list[str], cross_task: bool, model: Model,
-                background: bool = False, seeds: list[int] = SEEDS, scope: str = "") -> str:
+                background: bool = False, seeds: list[int] = SEEDS, scope: str = "",
+                word_limits: list = None) -> str:
     """One `tasks/run.py` invocation, for one dataset and its arms.
 
     A backgrounded one records its own pid: a bare `wait` would also wait on the
@@ -158,6 +159,9 @@ def run_command(task: str, memories: list[str], cross_task: bool, model: Model,
     replace will skip them rather than redo them - use a new sweep for that.
     """
     flag = "\n\t--intrinsic_cross_task \\" if cross_task else ""
+    if word_limits:
+        spelled = " ".join("none" if limit is None else str(limit) for limit in word_limits)
+        flag += f"\n\t--memory_word_limit {spelled} \\"
     trailing = " &\nRUN_PIDS+=($!)" if background else ""
     tokens = "".join(f"\n\t{flag_name} {value} \\" for flag_name, value in (
         ("--max_tokens_ceiling", model.max_tokens_ceiling),
@@ -320,6 +324,65 @@ tokens = sum(int(r["completion_tokens"]) + int(r["prompt_tokens"]) for r in rows
 scored = sum(int(r["tasks_scored"]) for r in rows)
 print(f"{len(rows)} arms, {scored} tasks scored, {tokens:,} tokens")
 print(f"{tokens/max(scored, 1):,.0f} tokens per task")
+' ${DB_DIR}/overall_results.csv
+
+cat ${DB_DIR}/*/*/*/*/failed_tasks.csv 2>/dev/null
+"""
+
+
+def render_word_limit(model: Model, task: str, sweep: str, *, seeds: list[int],
+                      db_dir: str, scope: str, limits: list[int],
+                      time_limit: str = CALIBRATE_TIME_LIMIT) -> str:
+    """One dataset's intrinsic arms, once unbounded and once per word limit.
+
+    The limit is a prompt instruction rather than a cap on the call, so what it
+    actually bought has to be measured: mean_reward against the unbounded arm for
+    what it cost, and intrinsic tokens per update for whether the model obeyed it.
+    Only the intrinsic family reads the flag, so the baselines are left out.
+
+    Arms and limits go in one invocation so the whole grid runs in one worker
+    pool. Split across invocations they would run one behind another against the
+    same idling server.
+    """
+    runs = run_command(task, intrinsic_arms(task), cross_task=False, model=model,
+                       seeds=seeds, scope=scope, word_limits=[None] + limits)
+    return (
+        preamble(
+            model, f"vllm-{task}-wordlimit",
+            f"{log_dir_for(sweep)}/{task}-wordlimit-%x.%j.%t.out",
+            f"{task}_wordlimit.sh", db_dir=db_dir, time_limit=time_limit,
+        )
+        + "\n"
+        + runs
+        + WORD_LIMIT_SUMMARY
+        + CLEANUP
+    )
+
+
+WORD_LIMIT_SUMMARY = """
+
+echo "==== word limit calibration ===="
+column -s, -t < ${DB_DIR}/overall_results.csv
+
+python3 -c '
+import collections, csv, sys
+rows = list(csv.DictReader(open(sys.argv[1])))
+by_limit = collections.defaultdict(list)
+for row in rows:
+    by_limit[row["memory_word_limit"]].append(row)
+
+row_format = "{:>9} {:>5} {:>8} {:>13} {:>11}"
+print(row_format.format("limit", "arms", "reward", "mem tok/task", "tok/update"))
+for limit in sorted(by_limit, key=lambda v: (v != "", -int(v or 0))):
+    group = by_limit[limit]
+    scored = sum(int(r["tasks_scored"]) for r in group)
+    memory = sum(int(r["intrinsic_completion_tokens"]) for r in group)
+    updates = sum(int(r["intrinsic_updates"]) for r in group)
+    reward = sum(float(r["mean_reward"]) * int(r["tasks_scored"]) for r in group)
+    print(row_format.format(
+        limit or "unbounded", len(group), round(reward / max(scored, 1), 3),
+        format(memory / max(scored, 1), ",.0f"), format(memory / max(updates, 1), ",.0f"),
+    ))
 ' ${DB_DIR}/overall_results.csv
 
 cat ${DB_DIR}/*/*/*/*/failed_tasks.csv 2>/dev/null

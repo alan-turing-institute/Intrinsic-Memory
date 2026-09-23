@@ -24,6 +24,16 @@ from experiment import install_llm_settings, run_experiment
 from mas_workflow import MAS
 
 
+def word_limit(value: str) -> int:
+    """A number of words, or `none` for the unbounded arm a sweep compares against."""
+    if value.lower() == 'none':
+        return None
+    limit = int(value)
+    if limit < 1:
+        raise argparse.ArgumentTypeError(f'a word limit must be positive, not {limit}')
+    return limit
+
+
 def build_experiment_configs(args) -> list[dict]:
     """One config per combination of the flags given several values.
 
@@ -108,11 +118,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help='keep an intrinsic memory across the tasks of a dataset instead of '
                              'starting each task from an empty one. No effect on the other memory '
                              'modules, which accumulate across tasks either way.')
-    parser.add_argument('--memory_word_limit', type=int, default=None,
+    parser.add_argument('--memory_word_limit', type=word_limit, nargs='+', default=None,
                         help='Words an intrinsic memory module may write per update. The '
                              'module rewrites its whole memory on every step, so what it '
                              'writes is most of what the arm spends; left unset nothing '
-                             'bounds it. No effect on the other memory modules.')
+                             'bounds it. No effect on the other memory modules. Several '
+                             'values are swept, and `none` is the unbounded arm they are '
+                             'read against.')
 
     # llm config
     parser.add_argument('--max_tokens', type=int, default=2048,

@@ -17,14 +17,14 @@ from tasks.tests.test_run_task import StubMAS, build_manager, read_csv
 import results
 
 
-IDENTITY = {
-    "model": "fake-model",
-    "task": "fever",
-    "mas_type": "autogen",
-    "mas_memory": "empty",
-    "use_validator": False,
-    "intrinsic_cross_task": False,
-}
+IDENTITY = results.identity(
+    model="fake-model",
+    task="fever",
+    mas_type="autogen",
+    mas_memory="empty",
+    use_validator=False,
+    intrinsic_cross_task=False,
+)
 
 
 def write_task_rows(path: Path, rows: list[dict]) -> None:
@@ -46,6 +46,7 @@ def task_row(task_id: int, *, seed: int = 42, reward: float = 1.0, done: bool = 
             prompt_tokens=tokens,
             intrinsic_completion_tokens=0,
             intrinsic_prompt_tokens=0,
+            intrinsic_updates=0,
         ),
     )
 

@@ -10,6 +10,7 @@ sit side by side - the results file tells their rows apart by the model column.
     uv run slurm/generate_slurm.py --sweep 2026-09             # rejoin a sweep
     uv run slurm/generate_slurm.py smoke --model qwen3.6-35b-a3b
     uv run slurm/generate_slurm.py calibration --task jericho --max_tasks 5
+    uv run slurm/generate_slurm.py wordlimit --task sciworld alfworld
 
 The matrix and the cluster are in slurm/config.py, the models in
 slurm/models.py, and the script bodies in slurm/render.py.
@@ -32,7 +33,13 @@ from config import (
     log_dir_for,
 )
 from models import DEFAULT_MODEL, MODELS, Model
-from render import render_calibration, render_crosstask, render_experiment, render_smoke
+from render import (
+    render_calibration,
+    render_crosstask,
+    render_experiment,
+    render_smoke,
+    render_word_limit,
+)
 
 # The sweep a script belongs to, dating its results and logs so a new one lands
 # beside the last rather than on top of it: a run refuses to append to a results
@@ -74,6 +81,16 @@ def scope_flags(task: str, max_tasks: int | None, max_trials: int | None) -> str
 
 def calibration_db_dir(sweep: str) -> str:
     return f"{db_dir_for(sweep)}-calibration"
+
+
+# --- word limit ----------------------------------------------------------
+
+# The unbounded arm is always run beside these, as the control they are read against.
+WORD_LIMITS = [200, 100, 50]
+
+
+def word_limit_db_dir(sweep: str) -> str:
+    return f"{db_dir_for(sweep)}-wordlimit"
 
 
 # --- writing -------------------------------------------------------------
@@ -177,6 +194,24 @@ def parse_args() -> argparse.Namespace:
     ):
         add_common(kinds.add_parser(name, help=help_text), suppress=True)
 
+    wordlimit = kinds.add_parser(
+        "wordlimit", help="short runs that size the intrinsic memory's length limit",
+    )
+    add_common(wordlimit, suppress=True)
+    wordlimit.add_argument(
+        "--memory_word_limit", nargs="+", type=int, default=WORD_LIMITS,
+        help="the limits to try, each a separate run of the intrinsic arms. The"
+             f" unbounded arm is always run too (default: {' '.join(map(str, WORD_LIMITS))})",
+    )
+    wordlimit.add_argument(
+        "--seed", nargs="+", type=int, default=CALIBRATION_SEEDS,
+        help=f"the seeds each arm runs (default: {' '.join(str(s) for s in CALIBRATION_SEEDS)})",
+    )
+    wordlimit.add_argument("--max_tasks", type=int, help="tasks of the dataset per arm")
+    wordlimit.add_argument("--max_trials", type=int, help="trials per task")
+    wordlimit.add_argument("--time_limit", default=CALIBRATE_TIME_LIMIT)
+    wordlimit.add_argument("--db_dir")
+
     calibrate = kinds.add_parser("calibration", help="short runs that size the real jobs")
     add_common(calibrate, suppress=True)
     calibrate.add_argument(
@@ -230,6 +265,17 @@ def main() -> None:
     ensure_log_dir(log_dir_for(sweep))
     print(f"{model.slug}, sweep {sweep}: results -> {db_dir_for(sweep)},"
           f" logs -> {log_dir_for(sweep)}")
+
+    if kind == "wordlimit":
+        db_dir = args.db_dir or word_limit_db_dir(sweep)
+        print(f"word limit calibration -> {db_dir}")
+        for task in args.task:
+            write_script(model, f"{task}_wordlimit.sh", render_word_limit(
+                model, task, sweep, seeds=args.seed, db_dir=db_dir,
+                scope=scope_flags(task, args.max_tasks, args.max_trials),
+                limits=args.memory_word_limit, time_limit=args.time_limit,
+            ))
+        return
 
     if kind == "calibration":
         db_dir = args.db_dir or calibration_db_dir(sweep)

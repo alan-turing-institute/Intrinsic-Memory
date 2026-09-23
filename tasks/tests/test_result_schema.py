@@ -26,7 +26,7 @@ def test_every_result_schema_is_aligned():
         assert columns[-1] == 'seed', f"{name} does not end in seed"
         assert len(set(columns)) == len(columns), f"{name} names a column twice"
 
-    block = results.TOKEN_COLUMNS
+    block = results.SPEND_COLUMNS
     for name in CARRY_TOKENS:
         columns = SCHEMAS[name]
         start = columns.index(block[0])
