@@ -213,3 +213,16 @@ def pytest_unconfigure(config):
     if hasattr(config, "_tee_log_file"):
         config._tee_log_file.close()
         print(f"\nTest output saved to: {config._tee_log_path}")
+
+
+@pytest.fixture
+def run_task_module(monkeypatch):
+    """experiment.py reads tasks/configs.yaml at import; these tests supply their own."""
+    import importlib
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    module = importlib.import_module("experiment")
+    monkeypatch.setattr(module, "get_task_few_shots", lambda **kwargs: ["a few shot"])
+    monkeypatch.setattr(module, "get_dataset_system_prompt", lambda *a, **k: "do the task")
+    monkeypatch.setattr(module, "CONFIG", {"fever": {"few_shots_num": 1}})
+    return module

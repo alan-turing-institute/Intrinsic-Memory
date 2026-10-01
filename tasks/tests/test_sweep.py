@@ -252,7 +252,7 @@ def test_two_seeds_of_one_config_do_not_share_a_memory_directory(
     monkeypatch.setattr(
         experiment,
         'run_task',
-        lambda manager, working_dir, failed_tasks_filename: memory_dirs.append(
+        lambda manager, working_dir, failed_tasks_filename, resume=False: memory_dirs.append(
             manager.mem_config['working_dir']
         ),
     )
@@ -383,7 +383,7 @@ def test_the_progress_file_survives_an_experiment_that_failed(
     """The case it exists for: no result was written, so the partial one is all there is."""
     experiment = experiment_module
 
-    def run_task_then_fail(task_manager, working_dir, failed_tasks_filename):
+    def run_task_then_fail(task_manager, working_dir, failed_tasks_filename, resume=False):
         experiment.results.write_row(
             experiment.results.progress_path(
                 working_dir, task_manager.task_name, task_manager.memory_type, task_manager.seed

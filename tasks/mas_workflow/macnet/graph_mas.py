@@ -158,8 +158,6 @@ class MacNet(MetaMAS):
                 
                 agent_message: AgentMessage = AgentMessage(
                     agent_name=curr_node._agent.name,
-                    system_instruction=curr_node._agent.system_instruction,
-                    user_instruction=user_prompt,
                     message=action
                 )
                 current_id: str = self.meta_memory.add_agent_node(  

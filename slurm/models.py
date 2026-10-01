@@ -1,6 +1,6 @@
 """The models a sweep can be pointed at, and what each needs to be served.
 
-A model is a whole serving configuration, not just a name: the two here need
+A model is a whole serving configuration, not just a name: the ones here need
 different vLLM builds, different weights locations and different flags, and
 getting one of those wrong costs a whole allocation before anything says so.
 
@@ -26,6 +26,10 @@ class Model:
 
     `served` is what `vllm serve` is given - a local snapshot path or a Hub id.
     `vllm_dir` holds the `.venv` that serves; it is not the experiment venv.
+
+    `hf_home` is exported for the whole job, so it has to be writable: the
+    experiment processes fetch the retriever's embedding model through it, long
+    after `vllm serve` has read the weights `served` names.
 
     The size fields are this model's defaults, not fixed values: what a
     checkpoint and a node can carry differ per model, so they cannot be one
@@ -60,7 +64,7 @@ GPT_OSS_120B = Model(
     name="openai/gpt-oss-120b",
     served=f"{SHARED_HF_HOME}/hub/models--openai--gpt-oss-120b/snapshots/{GPT_OSS_SNAPSHOT}/",
     vllm_dir="~/vllm_test",
-    hf_home=SHARED_HF_HOME,
+    hf_home=f"{PROJECT_DIR}/hf",
     # These three override the shared GPT-OSS_Hopper.yaml, which sets them to
     # 8192, 10240 and off. On this node the KV cache holds 3,730,336 tokens, 227
     # of them at max_model_len, so a queue deeper than that is a number the
@@ -78,7 +82,7 @@ QWEN36_35B_A3B = Model(
     slug="qwen3.6-35b-a3b",
     name="Qwen/Qwen3.6-35B-A3B",
     served="Qwen/Qwen3.6-35B-A3B",
-    vllm_dir="~/vllm_qwen36",
+    vllm_dir="~/vllm-0.28.0",
     # Not the shared cache and not home: one bf16 checkpoint of this size is
     # 72 GB, and home is quota'd well below that.
     hf_home=f"{PROJECT_DIR}/hf",
@@ -118,5 +122,26 @@ QWEN36_35B_A3B = Model(
     ),
 )
 
-MODELS = {model.slug: model for model in (GPT_OSS_120B, QWEN36_35B_A3B)}
+MISTRAL_7B_V03 = Model(
+    slug="mistral-7b-v0.3",
+    name="mistralai/Mistral-7B-Instruct-v0.3",
+    served="mistralai/Mistral-7B-Instruct-v0.3",
+    vllm_dir="~/vllm-0.28.0",
+    hf_home=f"{PROJECT_DIR}/hf",
+    # The checkpoint's own maximum, not a choice: max_position_embeddings is
+    # 32768, so the 65536 the other two are served at is not available here.
+    max_model_len=32768,
+    max_num_batched_tokens=8192,
+    max_num_seqs=256,
+    extra_serve_flags=("--enable-prefix-caching",),
+    extra_env=(("VLLM_USE_FLASHINFER_SAMPLER", "0"),),
+    notes=(
+        "Dense 7.2B, Apache-2.0, vLLM 0.28.0. It does not think, so it needs no reasoning "
+        "parser and no thinking budget, and the per-dataset token budgets transfer from "
+        "gpt-oss unchanged. Its chat template takes one optional leading system message and "
+        "folds it into the last user turn, which is the [system, user] pair mas/agents sends."
+    ),
+)
+
+MODELS = {model.slug: model for model in (GPT_OSS_120B, QWEN36_35B_A3B, MISTRAL_7B_V03)}
 DEFAULT_MODEL = GPT_OSS_120B.slug
