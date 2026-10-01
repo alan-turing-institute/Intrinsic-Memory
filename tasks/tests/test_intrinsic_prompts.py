@@ -138,23 +138,18 @@ def test_the_update_prompt_accepts_every_field_summarize_formats(key):
     for field in ('DESCRIPTION', 'TRAJECTORY', 'MEMORY'):
         assert field in formatted, f"{key}'s update prompt drops {field}"
 
-# ── a memory built from another's class carries the same prompts ──────────────
+# ── a sibling memory carries the same prompts ────────────────────────────────
 
 @pytest.mark.parametrize('key', INTRINSIC_KEYS)
 def test_a_rebuilt_memory_keeps_its_prompts(key):
     """A module's prompts belong to its class, not to one instance of it.
 
-    So a second instance built from the first one's class carries them too. This
-    is what `build_system` relies on to give the validator its own memory.
+    The namespace factory must preserve them when it gives the validator its
+    own memory instance.
     """
     original = build(key)
 
-    rebuilt = original.__class__(
-        namespace=original.namespace + '_validator',
-        global_config=original.global_config,
-        llm_model=original.llm_model,
-        embedding_func=original.embedding_func,
-    )
+    rebuilt = original.for_namespace('_validator')
 
     assert rebuilt.system_prompt == original.system_prompt, (
         f"{key} lost its system prompt when rebuilt from its own class"
