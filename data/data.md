@@ -114,10 +114,23 @@ curl -s "https://api.github.com/repos/BYU-PCCL/z-machine-games/git/trees/master?
     done
 ```
 
-That fetches 57 files, 8.5 MB. One of them, `lgop.z3`, is deliberately not in the
-manifest: Jericho reports a maximum score of 0 for it and knows no walkthrough, so
-neither the progress rate nor a victory could ever be scored. The other 56 all
-load and report a score range.
+That fetches 57 files, 8.5 MB. Two of them are deliberately not in the manifest,
+which lists 55.
+
+`lgop.z3`: Jericho reports a maximum score of 0 for it and knows no walkthrough, so
+neither the progress rate nor a victory could ever be scored.
+
+`hollywood.z3`: it corrupts the interpreter. Playing the game's own walkthrough with
+a `look`, an `inventory` and a `wait` between steps - what an agent does that a
+walkthrough does not - segfaults at step 10, on both linux and macos. Reached
+through ordinary play the same state either segfaults or sends the interpreter into
+an unbounded output loop, depending on the command: a worker sat in it grew from
+1.17 GB to 186 GB in six minutes and took the node's whole 449 GB cgroup with it.
+Nothing surfaces in python - no exception, no traceback - so a job that hits it
+reports only `Detected 1 oom_kill event`. The other 54 games play their whole
+walkthrough that way without faulting.
+
+The other 55 all load and report a score range.
 
 ### The trial budget
 
