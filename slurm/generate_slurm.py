@@ -10,6 +10,8 @@ sit side by side - the results file tells their rows apart by the model column.
     uv run slurm/generate_slurm.py --sweep 2026-09             # rejoin a sweep
     uv run slurm/generate_slurm.py smoke --model qwen3.6-35b-a3b
     uv run slurm/generate_slurm.py calibration --task jericho --max_tasks 5
+    uv run slurm/generate_slurm.py dylan --task fever hotpotqa pddl
+    uv run slurm/generate_slurm.py dylan --workflow dylan --task fever --max_tasks 20 --seed 11
 
 The matrix and the cluster are in slurm/config.py, the models in
 slurm/models.py, and the script bodies in slurm/render.py.
@@ -25,6 +27,7 @@ from pathlib import Path
 
 from config import (
     CALIBRATE_TIME_LIMIT,
+    DYLAN_ARMS,
     GENERATED_DIR,
     SEEDS,
     TASKS,
@@ -32,7 +35,13 @@ from config import (
     log_dir_for,
 )
 from models import DEFAULT_MODEL, MODELS, Model
-from render import render_calibration, render_crosstask, render_experiment, render_smoke
+from render import (
+    render_calibration,
+    render_crosstask,
+    render_dylan,
+    render_experiment,
+    render_smoke,
+)
 
 # The sweep a script belongs to, dating its results and logs so a new one lands
 # beside the last rather than on top of it: a run refuses to append to a results
@@ -173,7 +182,7 @@ def parse_args() -> argparse.Namespace:
         ("experiment", "one script per dataset, every arm x every seed"),
         ("crosstask", "every dataset's intrinsic arms, cross-task, in one job"),
         ("smoke", "the whole path, small - and how a model is brought up"),
-        ("all", "every kind except calibration (the default)"),
+        ("all", "every kind except calibration and dylan (the default)"),
     ):
         add_common(kinds.add_parser(name, help=help_text), suppress=True)
 
@@ -202,6 +211,21 @@ def parse_args() -> argparse.Namespace:
         help="where the runs write, unless DB_DIR is set at submit time (default: the"
              " sweep's results directory with -calibration appended)",
     )
+
+    dylan = kinds.add_parser("dylan", help="one script per dataset, the DyLAN workflows")
+    add_common(dylan, suppress=True)
+    dylan.add_argument(
+        "--workflow", nargs="+", choices=list(DYLAN_ARMS), default=list(DYLAN_ARMS),
+        help="the DyLAN workflows each script runs; `dylan` alone is the upstream workflow"
+             " (default: all of them)",
+    )
+    dylan.add_argument(
+        "--seed", nargs="+", type=int, default=SEEDS,
+        help="the seeds each arm runs (default: all ten)",
+    )
+    dylan.add_argument("--max_tasks", type=int, help="tasks of the dataset per arm (default: all)")
+    dylan.add_argument("--max_trials", type=int,
+                       help="trials per task, overriding the dataset's own budget")
 
     return parser.parse_args()
 
@@ -239,6 +263,18 @@ def main() -> None:
                 model, task, sweep, seeds=args.seed, db_dir=db_dir,
                 scope=scope_flags(task, args.max_tasks, args.max_trials),
                 time_limit=args.time_limit,
+            ))
+        return
+
+    if kind == "dylan":
+        scope = "".join(
+            f"\n\t--{name} {value} \\"
+            for name, value in (("max_tasks", args.max_tasks), ("max_trials", args.max_trials))
+            if value is not None
+        )
+        for task in args.task:
+            write_script(model, f"{task}_dylan.sh", render_dylan(
+                model, task, sweep, workflows=args.workflow, seeds=args.seed, scope=scope,
             ))
         return
 

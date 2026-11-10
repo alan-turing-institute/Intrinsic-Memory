@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from collections import Counter
+from typing import NamedTuple, Optional
 import math
 
 from mas.agents import Agent
@@ -18,9 +19,37 @@ from .dylan_prompt import (
 )
 from ..format import format_task_prompt_with_insights, format_task_context
 
+# `shared` reads the one memory afresh at every agent turn; the others update each
+# memory once per environment step.
+AGENT_MEMORIES = ('shared', 'shared-step', 'private', 'private-agnostic')
+PRIVATE_MEMORIES = ('private', 'private-agnostic')
+
+
+class Proposal(NamedTuple):
+    step: int
+    round: int
+    role: str
+    action: str
+
+
+def proposal_log(heading: str, proposals: list[Proposal], with_role: bool) -> str:
+    if not proposals:
+        return ''
+    lines = [
+        f"Step {p.step}, round {p.round}{f', {p.role}' if with_role else ''}: {p.action}"
+        for p in proposals
+    ]
+    return f'## {heading}\n' + '\n'.join(lines) + '\n'
+
 
 @dataclass
 class DyLAN(MetaMAS):
+    # Unannotated, so they stay off the constructor and a registered variant can set them.
+    roles = ('solver',)
+    node_num = 3
+    round_num = 3
+    agent_memory = 'shared'
+
     class NeuronGrid:
         def __init__(self, width: int, height: int):
             self.width = width
@@ -55,10 +84,12 @@ class DyLAN(MetaMAS):
         self._decision_neuron: LLMNeuron = None
     
     def build_system(self, reasoning: ReasoningBase, mas_memory: MASMemoryBase, env: Env, config: dict):
-        
+        if self.agent_memory not in AGENT_MEMORIES:
+            raise ValueError(f"unknown agent_memory {self.agent_memory!r}, expected one of {AGENT_MEMORIES}")
+
         # parse args
-        self._height: int = config.get('node_num', 3)
-        self._width: int = config.get('round_num', 3)
+        self._height: int = config.get('node_num', self.node_num)
+        self._width: int = config.get('round_num', self.round_num)
         self._learning_rate: float = config.get('learning_rate', 0.01)
         self._use_critic: bool = config.get('use_critic', False)
         self._successful_topk: int = config.get('successful_topk', 1)
@@ -67,7 +98,7 @@ class DyLAN(MetaMAS):
         self._threshold: float = config.get('threshold', 0)
         self._use_projector: bool = config.get('use_projector', False)
 
-        self._roles: list[str] = config.get('roles', ['solver'])
+        self._roles: list[str] = list(config.get('roles', self.roles))
         self._roles = [role for role in self._roles if role in VALID_ROLES] 
         if len(self._roles) == 0:
             self._roles.append('solver')
@@ -77,6 +108,7 @@ class DyLAN(MetaMAS):
         self.notify_observers(f"Round Number      : {self._width}")
         self.notify_observers(f"Learning Rate     : {self._learning_rate}")
         self.notify_observers(f"Roles             : {self._roles}")
+        self.notify_observers(f"Agent Memory      : {self.agent_memory}")
         self.notify_observers(f"Use Critic        : {self._use_critic}")
         self.notify_observers(f"Successful Topk   : {self._successful_topk}")
         self.notify_observers(f"Failed Topk       : {self._failed_topk}")
@@ -132,6 +164,55 @@ class DyLAN(MetaMAS):
         
         self.set_env(env)
         self.meta_memory = mas_memory
+        self._seated_roles: list[str] = list(dict.fromkeys(
+            self._roles[h % len(self._roles)] for h in range(self._height)
+        ))
+        self._role_memories: dict[str, MASMemoryBase] = self._build_role_memories(mas_memory)
+        self._proposals: list[Proposal] = []
+
+    def _build_role_memories(self, mas_memory: MASMemoryBase) -> dict[str, MASMemoryBase]:
+        """The memory each role is shown."""
+        if self.agent_memory not in PRIVATE_MEMORIES:
+            return dict.fromkeys(self._seated_roles, mas_memory)
+        return {
+            role: mas_memory.__class__(
+                namespace=f'{mas_memory.namespace}_{role}',
+                global_config=mas_memory.global_config,
+                llm_model=mas_memory.llm_model,
+                embedding_func=mas_memory.embedding_func,
+            )
+            for role in self._seated_roles
+        }
+
+    def _memories(self) -> list[MASMemoryBase]:
+        """Every distinct memory an episode keeps current, the team's first."""
+        memories = [self.meta_memory]
+        for memory in self._role_memories.values():
+            if not any(memory is kept for kept in memories):
+                memories.append(memory)
+        return memories
+
+    def _step_views(self) -> Optional[dict[str, str]]:
+        """What each role is shown this step, or None where every turn reads the memory afresh."""
+        if self.agent_memory == 'shared':
+            return None
+        if self.agent_memory == 'shared-step':
+            view = self.meta_memory.summarize(
+                solver_message=proposal_log('Actions the agents proposed', self._proposals, with_role=True)
+            )
+            return dict.fromkeys(self._seated_roles, view)
+        return {
+            role: self._role_memories[role].summarize(solver_message=self._role_message(role))
+            for role in self._seated_roles
+        }
+
+    def _role_message(self, role: str) -> str:
+        own = proposal_log(
+            'Actions you proposed', [p for p in self._proposals if p.role == role], with_role=False
+        )
+        if self.agent_memory == 'private':
+            return f'## Your role\n{get_role_system_prompt(role)}\n{own}'
+        return own
 
     def schedule(self, task_config: dict) -> EpisodeResult:
         """
@@ -171,7 +252,9 @@ class DyLAN(MetaMAS):
 
         env = self.env
         env.reset()
-        self.meta_memory.init_task_context(task_main, task_description)
+        for memory in self._memories():
+            memory.init_task_context(task_main, task_description)
+        self._proposals = []
 
         # retrieve
         successful_trajectories: list[MASMessage]
@@ -190,11 +273,13 @@ class DyLAN(MetaMAS):
         raw_rules: list[str] = [insight for insight in insights]
         roles_rules: dict[str, list[str]] = self._project_insights(raw_rules)
         
+        views = self._step_views()
         user_prompt: str = format_task_prompt_with_insights(
             few_shots=few_shots, 
             memory_few_shots=successful_shots,
             insights=raw_rules,
-            task_description=self.meta_memory.summarize()
+            task_description=(self.meta_memory.summarize() if views is None
+                              else next(iter(views.values())))
         )
         self.notify_observers(user_prompt)
         
@@ -203,6 +288,8 @@ class DyLAN(MetaMAS):
 
         for i in range(env.max_trials):
 
+            if i > 0:
+                views = self._step_views()
             self._reset_state()
             upstream_neuron_ids: dict[str, str] = {}  
             consensus = False
@@ -214,7 +301,8 @@ class DyLAN(MetaMAS):
                         few_shots=few_shots, 
                         memory_few_shots=successful_shots,
                         insights=roles_rules.get(curr_neuron._agent.profile, raw_rules),
-                        task_description=self.meta_memory.summarize()
+                        task_description=(self.meta_memory.summarize() if views is None
+                                          else views[curr_neuron.role])
                     )
                     while tries < max_trials:
                         try: 
@@ -227,6 +315,7 @@ class DyLAN(MetaMAS):
                             print(f'Error during execution of node {curr_neuron.id}: {e}')
                         tries += 1
 
+                    self._proposals.append(Proposal(i + 1, w + 1, curr_neuron.role, action))
                     agent_message: AgentMessage = AgentMessage(
                         agent_name=curr_neuron._agent.name,
                         message=action
@@ -251,7 +340,8 @@ class DyLAN(MetaMAS):
             observation, reward, done = env.step(final_action)
             step_message: str = f'Act {i + 1}: {final_action}\nObs {i + 1}: {observation}'
             self.notify_observers(step_message)
-            self.meta_memory.move_memory_state(final_action, observation, reward=reward) 
+            for memory in self._memories():
+                memory.move_memory_state(final_action, observation, reward=reward)
 
             trials = i + 1
             if done:
@@ -260,8 +350,9 @@ class DyLAN(MetaMAS):
         # Final feedback and memory update
         final_reward, final_done, final_feedback = self.env.feedback()
         self.notify_observers(final_feedback)
-        self.meta_memory.save_task_context(label=final_done, feedback=final_feedback)  
-        
+        for memory in self._memories():
+            memory.save_task_context(label=final_done, feedback=final_feedback)
+
         return EpisodeResult(reward=final_reward, done=final_done, trials=trials)
 
 
@@ -396,3 +487,23 @@ class DyLAN(MetaMAS):
                     out_edge.set_weight(0)
             
 
+
+@dataclass
+class DyLANWithRoles(DyLAN):
+    roles = ('planner', 'solver', 'verifier')
+    round_num = 2
+
+
+@dataclass
+class DyLANSharedMemory(DyLANWithRoles):
+    agent_memory = 'shared-step'
+
+
+@dataclass
+class DyLANPrivateMemory(DyLANWithRoles):
+    agent_memory = 'private'
+
+
+@dataclass
+class DyLANRoleAgnosticMemory(DyLANWithRoles):
+    agent_memory = 'private-agnostic'

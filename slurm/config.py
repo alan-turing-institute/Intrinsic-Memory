@@ -27,6 +27,15 @@ BASELINE_MEMORIES = [
 # (intrinsicmemory-<task>) is added alongside these in both scripts.
 INTRINSIC_ABLATIONS = ["intrinsicmemory-notemplate", "intrinsicmemory-llm-structured-template"]
 
+# The DyLAN workflows and the memory arms each runs. `dylan` is the upstream
+# workflow; `empty` with a private variant would repeat `dylan-shared`'s.
+DYLAN_ARMS = {
+    "dylan": ["empty", "intrinsicmemory-{task}"],
+    "dylan-shared": ["empty", "intrinsicmemory-{task}"],
+    "dylan-private": ["intrinsicmemory-{task}"],
+    "dylan-private-agnostic": ["intrinsicmemory-{task}"],
+}
+
 # The budget a call starts at, per task; tasks not listed use DEFAULT_MAX_TOKENS.
 # A starved reasoning model is retried with a doubled budget, so too small a
 # start is paid for in whole wasted calls rather than in a truncated answer.

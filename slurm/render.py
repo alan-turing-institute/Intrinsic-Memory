@@ -1,14 +1,16 @@
 """The bodies of the generated slurm scripts.
 
-Four kinds, one serving path: `experiment` (one dataset, every arm),
+Five kinds, one serving path: `experiment` (one dataset, every arm),
 `crosstask` (every dataset's intrinsic arms, one job), `calibrate` (one dataset,
-twenty tasks, to size the others) and `smoke` (the whole path, small).
+twenty tasks, to size the others), `dylan` (one dataset, the DyLAN workflows) and
+`smoke` (the whole path, small).
 """
 from config import (
     ACCOUNT,
     CALIBRATE_TIME_LIMIT,
     CPUS_PER_TASK,
     DEFAULT_MAX_TOKENS,
+    DYLAN_ARMS,
     GPUS,
     MAX_TOKENS_OVERRIDES,
     NODES,
@@ -146,7 +148,8 @@ srun --nodes=1 --gpus=${SLURM_GPUS} --ntasks-per-node 1 \\
 
 
 def run_command(task: str, memories: list[str], cross_task: bool, model: Model,
-                background: bool = False, seeds: list[int] = SEEDS, scope: str = "") -> str:
+                background: bool = False, seeds: list[int] = SEEDS, scope: str = "",
+                mas_type: str = "autogen") -> str:
     """One `tasks/run.py` invocation, for one dataset and its arms.
 
     A backgrounded one records its own pid: a bare `wait` would also wait on the
@@ -166,7 +169,7 @@ def run_command(task: str, memories: list[str], cross_task: bool, model: Model,
 
     return f"""uv run --no-sync tasks/run.py \\
 \t--task {task} \\
-\t--mas_type autogen \\
+\t--mas_type {mas_type} \\
 \t--mas_memory {" ".join(memories)} \\
 \t--seed {" ".join(str(seed) for seed in seeds)} \\{flag}{scope}
 \t--db_dir ${{DB_DIR}} \\
@@ -280,6 +283,31 @@ def render_crosstask(model: Model, sweep: str, tasks: list[str] = TASKS,
 RUN_PIDS=()
 
 """
+        + runs
+        + '\n\nwait "${RUN_PIDS[@]}"\n'
+        + CLEANUP
+    )
+
+
+def render_dylan(model: Model, task: str, sweep: str, *, workflows: list[str],
+                 seeds: list[int] = SEEDS, scope: str = "") -> str:
+    """One dataset's DyLAN workflows, concurrently against one server.
+
+    One `run.py` per workflow: `--mas_type` takes a single value.
+    """
+    runs = "\n\n".join(
+        run_command(task, [arm.format(task=task) for arm in DYLAN_ARMS[workflow]],
+                    cross_task=False, model=model, background=True, seeds=seeds,
+                    scope=scope, mas_type=workflow)
+        for workflow in workflows
+    )
+
+    return (
+        preamble(
+            model, f"vllm-{task}-dylan", f"{log_dir_for(sweep)}/{task}-dylan-%x.%j.%t.out",
+            f"{task}_dylan.sh", db_dir=db_dir_for(sweep),
+        )
+        + "\nRUN_PIDS=()\n\n"
         + runs
         + '\n\nwait "${RUN_PIDS[@]}"\n'
         + CLEANUP

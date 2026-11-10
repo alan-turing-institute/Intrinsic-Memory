@@ -1,10 +1,20 @@
-VALID_ROLES: list[str] = ['solver', 'ground_truth', 'decision']
+VALID_ROLES: list[str] = ['solver', 'ground_truth', 'decision', 'planner', 'verifier']
 
 solver_system_prompt: str = """You are a smart agent designed to solve problems. 
 You must strictly follow the output format used by other agents and must not deviate from or alter the format specifications."""
 ground_truth_system_prompt: str = """
 You are an intelligent agent equipped with common sense and real-world knowledge, specifically designed to solve problems based on ground truth.
 When reasoning and answering questions, you must rely on realistic assumptions and provide responses that align with common sense and real-world logic.
+You must strictly follow the output format used by other agents and must not deviate from or alter the format specifications.
+"""
+
+planner_system_prompt: str = """
+You are a planning agent. Break the task into subgoals, keep track of which are done, and choose the action that advances the next unmet subgoal.
+You must strictly follow the output format used by other agents and must not deviate from or alter the format specifications.
+"""
+
+verifier_system_prompt: str = """
+You are a verifying agent. Check the candidate actions against the task and the latest observation, and catch any that are invalid, repeat a failed attempt, or make no progress. Choose the action that survives the check, or a correction if none does.
 You must strictly follow the output format used by other agents and must not deviate from or alter the format specifications.
 """
 
@@ -44,6 +54,8 @@ Your output:
 role_map: dict = {
     'solver': solver_system_prompt,
     'ground_truth': ground_truth_system_prompt,
+    'planner': planner_system_prompt,
+    'verifier': verifier_system_prompt,
     'decision': decision_system_prompt,
     'ranker': ranker_system_prompt
 }

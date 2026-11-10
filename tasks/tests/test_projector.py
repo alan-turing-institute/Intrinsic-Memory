@@ -98,8 +98,8 @@ def test_each_role_receives_insights_projected_for_it(mas_type):
 
 @pytest.mark.parametrize("mas_type", WORKFLOWS)
 def test_roles_that_differ_receive_insights_that_differ(mas_type):
-    """Only `autogen` distinguishes roles: DyLAN's nine agents and MacNet's three
-    all carry the profile `solver`, so there is one role to project onto."""
+    """Upstream DyLAN's nine agents and MacNet's three all carry the profile
+    `solver`, so there is one role to project onto."""
     workflow = build_workflow(
         mas_type, FakeEnv(), memory_cls=ProjectingMemory, use_projector=True
     )
