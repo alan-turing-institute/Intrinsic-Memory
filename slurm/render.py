@@ -1,8 +1,9 @@
 """The bodies of the generated slurm scripts.
 
-Four kinds, one serving path: `experiment` (one dataset, every arm),
-`crosstask` (every dataset's intrinsic arms, one job), `calibrate` (one dataset,
-twenty tasks, to size the others) and `smoke` (the whole path, small).
+Five kinds, one serving path: `experiment` (one dataset, every arm),
+`crosstask` (every dataset's intrinsic arms, one job), `controls` (one dataset,
+the two template controls), `calibrate` (one dataset, twenty tasks, to size the
+others) and `smoke` (the whole path, small).
 """
 from config import (
     ACCOUNT,
@@ -24,6 +25,7 @@ from config import (
     VLLM_STARTUP_SLEEP,
     BASELINE_MEMORIES,
     INTRINSIC_ABLATIONS,
+    TEMPLATE_CONTROLS,
     db_dir_for,
     log_dir_for,
 )
@@ -246,6 +248,19 @@ def render_experiment(model: Model, task: str, sweep: str, seeds: list[int] = SE
         )
         + "\n"
         + run_command(task, every_arm(task), cross_task=False, model=model, seeds=seeds)
+        + CLEANUP
+    )
+
+
+def render_controls(model: Model, task: str, sweep: str, seeds: list[int] = SEEDS) -> str:
+    arms = [arm.format(task=task) for arm in TEMPLATE_CONTROLS]
+    return (
+        preamble(
+            model, f"vllm-{task}-controls", f"{log_dir_for(sweep)}/{task}-controls-%x.%j.%t.out",
+            f"{task}_controls.sh", db_dir=db_dir_for(sweep),
+        )
+        + "\n"
+        + run_command(task, arms, cross_task=False, model=model, seeds=seeds)
         + CLEANUP
     )
 

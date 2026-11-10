@@ -24,6 +24,20 @@ MAS_MEMORY_MODULES: dict[str, Type[MASMemoryBase]] = {
     'intrinsicmemory-sciworld': IntrinsicMASMemorySCIWORLD,
     'intrinsicmemory-llm-structured-template': IntrinsicMASMemoryLLMTemplate,
     'intrinsicmemory-notemplate': IntrinsicMASMemoryNoTemplate,
+    'intrinsicmemory-pddl-schema': IntrinsicMASMemoryPDDLSchema,
+    'intrinsicmemory-fever-schema': IntrinsicMASMemoryFEVERSchema,
+    'intrinsicmemory-hotpotqa-schema': IntrinsicMASMemoryHOTPOTQASchema,
+    'intrinsicmemory-alfworld-schema': IntrinsicMASMemoryALFWORLDSchema,
+    'intrinsicmemory-babyai-schema': IntrinsicMASMemoryBABYAISchema,
+    'intrinsicmemory-jericho-schema': IntrinsicMASMemoryJERICHOSchema,
+    'intrinsicmemory-sciworld-schema': IntrinsicMASMemorySCIWORLDSchema,
+    'frozentemplate-pddl': FrozenTemplatePDDL,
+    'frozentemplate-fever': FrozenTemplateFEVER,
+    'frozentemplate-hotpotqa': FrozenTemplateHOTPOTQA,
+    'frozentemplate-alfworld': FrozenTemplateALFWORLD,
+    'frozentemplate-babyai': FrozenTemplateBABYAI,
+    'frozentemplate-jericho': FrozenTemplateJERICHO,
+    'frozentemplate-sciworld': FrozenTemplateSCIWORLD,
 }
 
 

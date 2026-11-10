@@ -26,6 +26,9 @@ BASELINE_MEMORIES = [
 # Intrinsic ablations that don't vary by task; the per-task intrinsic memory
 # (intrinsicmemory-<task>) is added alongside these in both scripts.
 INTRINSIC_ABLATIONS = ["intrinsicmemory-notemplate", "intrinsicmemory-llm-structured-template"]
+# Separate the hand-written template's content from its structure: the template
+# frozen as a never-updated memory, and its fields with every value emptied.
+TEMPLATE_CONTROLS = ["frozentemplate-{task}", "intrinsicmemory-{task}-schema"]
 
 # The budget a call starts at, per task; tasks not listed use DEFAULT_MAX_TOKENS.
 # A starved reasoning model is retried with a doubled budget, so too small a

@@ -907,6 +907,366 @@ class IntrinsicMemoryBABYAI:
     system_prompt: str = MEMORY_SYSTEM_PROMPT_BABYAI
 
 INTRINSICMEMORY_BABYAI: IntrinsicMemoryBABYAI = IntrinsicMemoryBABYAI()
+#----------------------------------------------intrinsicmemory memory SCHEMA ONLY----------------------------------------------
+
+
+def template_of(system_prompt: str) -> str:
+    """The JSON memory template in a hand-written system prompt: from a bare `{` line to the next bare `}`."""
+    lines = system_prompt.splitlines()
+    start = lines.index('{')
+    return '\n'.join(lines[start:lines.index('}', start) + 1])
+
+
+SCHEMA_ONLY_HEADER = """
+You are a MEMORY UPDATER for an agent solving {dataset} tasks.
+
+Maintain a JSON memory that follows the template below. Fill its fields from the task description and the agent's trajectory.
+
+----------------
+MEMORY TEMPLATE
+----------------
+"""
+
+SCHEMA_ONLY_INSTRUCTIONS = """
+----------------
+UPDATE INSTRUCTIONS
+----------------
+
+1. Parse the current memory. If it is empty or invalid, initialise it from the template above.
+2. Fill and update the fields with what the latest turn shows.
+3. Keep every entry short, and deduplicate.
+4. Return ONLY the updated memory as valid JSON, keeping every key of the template.
+"""
+
+
+# The hand-written templates' keys and nesting, every value emptied.
+
+SCHEMA_TEMPLATE_PDDL = """
+{
+  "task_summary": "",
+  "global_strategies": [],
+  "domains": {
+    "blockworld": {
+      "valid_action_patterns": [],
+      "good_strategies": [],
+      "invalid_patterns": [],
+      "mistakes": []
+    },
+    "barman": {
+      "valid_action_patterns": [],
+      "good_strategies": [],
+      "invalid_patterns": [],
+      "mistakes": []
+    },
+    "gripper": {
+      "valid_action_patterns": [],
+      "good_strategies": [],
+      "invalid_patterns": [],
+      "mistakes": []
+    },
+    "tyreworld": {
+      "valid_action_patterns": [],
+      "good_strategies": [],
+      "invalid_patterns": [],
+      "mistakes": []
+    }
+  },
+  "tasks": [
+    {
+      "id": "",
+      "goal": "",
+      "status": "",
+      "helpful_observations": [],
+      "invalid_actions": [],
+      "progress_notes": []
+    }
+  ]
+}
+"""
+
+SCHEMA_TEMPLATE_FEVER = """
+{
+  "task_summary": "",
+  "global_strategies": [],
+  "claims": [
+    {
+      "id": "",
+      "text": "",
+      "status": "",
+      "final_answer": "",
+      "key_entities": [],
+      "useful_search_queries": [],
+      "supporting_evidence": [],
+      "refuting_evidence": [],
+      "reasoning_notes": []
+    }
+  ],
+  "tool_memory": {
+    "search": {
+      "good_patterns": [],
+      "bad_patterns": []
+    },
+    "lookup": {
+      "good_patterns": [],
+      "bad_patterns": []
+    }
+  },
+  "mistakes_to_avoid": []
+}
+"""
+
+SCHEMA_TEMPLATE_HOTPOTQA = """
+{
+  "task_summary": "",
+  "question_types": {
+    "bridge": {
+      "recognise_by": "",
+      "procedure": []
+    },
+    "comparison": {
+      "recognise_by": "",
+      "procedure": []
+    }
+  },
+  "answer_form": {
+    "rules": [],
+    "rejected_shapes": []
+  },
+  "questions": [
+    {
+      "id": "",
+      "text": "",
+      "type": "",
+      "status": "",
+      "hops": [],
+      "hops_resolved": [],
+      "bridge_entity": "",
+      "final_answer": "",
+      "useful_search_queries": []
+    }
+  ],
+  "disambiguation": {
+    "qualifiers_that_worked": [],
+    "titles_that_are_ambiguous": []
+  },
+  "tool_memory": {
+    "search": {
+      "good_patterns": [],
+      "bad_patterns": []
+    },
+    "lookup": {
+      "good_patterns": [],
+      "bad_patterns": []
+    }
+  },
+  "mistakes_to_avoid": []
+}
+"""
+
+SCHEMA_TEMPLATE_SCIWORLD = """
+{
+  "task_summary": "",
+  "syntax_rules": [],
+  "global_strategies": [],
+  "room_contents": {
+    "kitchen": [],
+    "outside": [],
+    "art studio": [],
+    "workshop": [],
+    "green house": [],
+    "notes": ""
+  },
+  "procedures": {
+    "measure_temperature": [],
+    "heat_substance": [],
+    "cool_substance": [],
+    "get_water": [],
+    "mix_paint": [],
+    "notes": ""
+  },
+  "entity_knowledge": {
+    "lifespans": {
+      "example: crocodile": "",
+      "example: mouse": ""
+    },
+    "life_stages": {
+      "example: butterfly": []
+    },
+    "living": [],
+    "non_living": [],
+    "melting_points_c": {
+      "example: ice": 0
+    },
+    "notes": ""
+  },
+  "common_invalid_patterns": [],
+  "tasks": [
+    {
+      "id": "",
+      "goal": "",
+      "status": "",
+      "target_of_focus": "",
+      "subgoals_reached": [],
+      "subgoals_missed": [],
+      "notes": []
+    }
+  ]
+}
+"""
+
+SCHEMA_TEMPLATE_ALFWORLD = """
+{
+  "task_summary": "",
+  "syntax_rules": [],
+  "global_strategies": [],
+  "object_location_knowledge": {
+    "apple": [],
+    "lettuce": [],
+    "soapbottle": [],
+    "soapbar": [],
+    "spraybottle": [],
+    "mug": [],
+    "pan": [],
+    "potato": [],
+    "creditcard": [],
+    "cellphone": [],
+    "statue": [],
+    "desklamp": [],
+    "generic_defaults": []
+  },
+  "tool_usage_patterns": {
+    "clean": [],
+    "heat": [],
+    "cool": [],
+    "examine_with_light": [],
+    "put_two": []
+  },
+  "common_invalid_patterns": [],
+  "tasks": [
+    {
+      "task_id": "",
+      "goal": "",
+      "status": "",
+      "key_objects": [],
+      "key_locations": [],
+      "successful_action_patterns": [],
+      "errors": [],
+      "notes": []
+    }
+  ]
+}
+"""
+
+SCHEMA_TEMPLATE_JERICHO = """
+{
+  "task_summary": "",
+  "vocabulary": {
+    "verbs_that_worked": [],
+    "words_the_parser_rejected": [],
+    "phrasings_that_failed": []
+  },
+  "map": {
+    "<room name as the game prints it>": {
+      "exits": {
+        "north": "",
+        "west": ""
+      },
+      "objects_seen": [],
+      "visited": false,
+      "notes": ""
+    }
+  },
+  "current_location": "",
+  "inventory": [],
+  "objects": {
+    "<object name>": {
+      "found_in": "",
+      "portable": false,
+      "used_for": ""
+    }
+  },
+  "scoring_events": [
+    {
+      "points": 0,
+      "command": "",
+      "where": "",
+      "why": ""
+    }
+  ],
+  "puzzles": [
+    {
+      "what_blocks_progress": "",
+      "tried": [],
+      "status": "",
+      "solution": ""
+    }
+  ],
+  "mistakes_to_avoid": []
+}
+"""
+
+SCHEMA_TEMPLATE_BABYAI = """
+{
+  "task_summary": "",
+  "movement_rules": [],
+  "mission_types": {
+    "go to X": {
+      "procedure": ""
+    },
+    "pick up X": {
+      "procedure": ""
+    },
+    "open X": {
+      "procedure": ""
+    },
+    "put X next to Y": {
+      "procedure": ""
+    },
+    "sequenced missions": {
+      "recognise_by": "",
+      "procedure": ""
+    }
+  },
+  "door_and_key_rules": [],
+  "objects_and_layout": {
+    "note": "",
+    "landmarks": []
+  },
+  "tasks": [
+    {
+      "task_id": "",
+      "mission": "",
+      "status": "",
+      "sub_goals": [],
+      "sub_goals_done": [],
+      "carrying": "",
+      "wasted_actions": [],
+      "notes": []
+    }
+  ],
+  "mistakes_to_avoid": []
+}
+"""
+
+
+@dataclass
+class IntrinsicMemorySchemaOnly:
+    system_prompt: str
+
+
+def schema_only(dataset: str, template: str) -> IntrinsicMemorySchemaOnly:
+    return IntrinsicMemorySchemaOnly(
+        SCHEMA_ONLY_HEADER.format(dataset=dataset) + template + SCHEMA_ONLY_INSTRUCTIONS)
+
+
+INTRINSICMEMORY_PDDL_SCHEMA: IntrinsicMemorySchemaOnly = schema_only('PDDL planning', SCHEMA_TEMPLATE_PDDL)
+INTRINSICMEMORY_FEVER_SCHEMA: IntrinsicMemorySchemaOnly = schema_only('FEVER fact-checking', SCHEMA_TEMPLATE_FEVER)
+INTRINSICMEMORY_HOTPOTQA_SCHEMA: IntrinsicMemorySchemaOnly = schema_only('HotpotQA multi-hop question-answering', SCHEMA_TEMPLATE_HOTPOTQA)
+INTRINSICMEMORY_SCIWORLD_SCHEMA: IntrinsicMemorySchemaOnly = schema_only('ScienceWorld', SCHEMA_TEMPLATE_SCIWORLD)
+INTRINSICMEMORY_ALFWORLD_SCHEMA: IntrinsicMemorySchemaOnly = schema_only('ALFWorld household', SCHEMA_TEMPLATE_ALFWORLD)
+INTRINSICMEMORY_JERICHO_SCHEMA: IntrinsicMemorySchemaOnly = schema_only('Jericho interactive fiction', SCHEMA_TEMPLATE_JERICHO)
+INTRINSICMEMORY_BABYAI_SCHEMA: IntrinsicMemorySchemaOnly = schema_only('BabyAI gridworld', SCHEMA_TEMPLATE_BABYAI)
+
 #----------------------------------------------intrinsicmemory memory NO TEMPLATE----------------------------------------------
 
 

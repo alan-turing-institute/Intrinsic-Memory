@@ -8,15 +8,31 @@ from .GMemory import GMemory
 from .intrinsicmemory import (
     IntrinsicMASMemory,
     IntrinsicMASMemoryALFWORLD,
+    IntrinsicMASMemoryALFWORLDSchema,
     IntrinsicMASMemoryBABYAI,
+    IntrinsicMASMemoryBABYAISchema,
     IntrinsicMASMemoryFEVER,
+    IntrinsicMASMemoryFEVERSchema,
     IntrinsicMASMemoryHOTPOTQA,
+    IntrinsicMASMemoryHOTPOTQASchema,
     IntrinsicMASMemoryJERICHO,
+    IntrinsicMASMemoryJERICHOSchema,
     IntrinsicMASMemoryNoTemplate,
     IntrinsicMASMemoryPDDL,
+    IntrinsicMASMemoryPDDLSchema,
     IntrinsicMASMemorySCIWORLD,
+    IntrinsicMASMemorySCIWORLDSchema,
 )
 from .intrinsicmemory_llm_structured_template import IntrinsicMASMemoryLLMTemplate
+from .frozentemplate import (
+    FrozenTemplateALFWORLD,
+    FrozenTemplateBABYAI,
+    FrozenTemplateFEVER,
+    FrozenTemplateHOTPOTQA,
+    FrozenTemplateJERICHO,
+    FrozenTemplatePDDL,
+    FrozenTemplateSCIWORLD,
+)
 
 __all__ = [
     'MASMemoryBase', 
@@ -36,6 +52,20 @@ __all__ = [
     'IntrinsicMASMemoryJERICHO',
     'IntrinsicMASMemoryALFWORLD',
     'IntrinsicMASMemorySCIWORLD',
-    'IntrinsicMASMemory'
+    'IntrinsicMASMemory',
+    'IntrinsicMASMemoryPDDLSchema',
+    'IntrinsicMASMemoryFEVERSchema',
+    'IntrinsicMASMemoryHOTPOTQASchema',
+    'IntrinsicMASMemoryALFWORLDSchema',
+    'IntrinsicMASMemoryBABYAISchema',
+    'IntrinsicMASMemoryJERICHOSchema',
+    'IntrinsicMASMemorySCIWORLDSchema',
+    'FrozenTemplatePDDL',
+    'FrozenTemplateFEVER',
+    'FrozenTemplateHOTPOTQA',
+    'FrozenTemplateALFWORLD',
+    'FrozenTemplateBABYAI',
+    'FrozenTemplateJERICHO',
+    'FrozenTemplateSCIWORLD',
 
 ]

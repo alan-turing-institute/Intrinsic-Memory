@@ -32,7 +32,9 @@ from config import (
     log_dir_for,
 )
 from models import DEFAULT_MODEL, MODELS, Model
-from render import render_calibration, render_crosstask, render_experiment, render_smoke
+from render import (
+    render_calibration, render_controls, render_crosstask, render_experiment, render_smoke,
+)
 
 # The sweep a script belongs to, dating its results and logs so a new one lands
 # beside the last rather than on top of it: a run refuses to append to a results
@@ -172,6 +174,7 @@ def parse_args() -> argparse.Namespace:
     for name, help_text in (
         ("experiment", "one script per dataset, every arm x every seed"),
         ("crosstask", "every dataset's intrinsic arms, cross-task, in one job"),
+        ("controls", "one script per dataset, the two template controls x every seed"),
         ("smoke", "the whole path, small - and how a model is brought up"),
         ("all", "every kind except calibration (the default)"),
     ):
@@ -246,6 +249,10 @@ def main() -> None:
         for task in args.task:
             write_script(model, f"{task}_experiment.sh",
                          render_experiment(model, task, sweep))
+
+    if kind in ("controls", "all"):
+        for task in args.task:
+            write_script(model, f"{task}_controls.sh", render_controls(model, task, sweep))
 
     if kind in ("crosstask", "all"):
         write_script(model, "crosstask.sh", render_crosstask(model, sweep, tasks=args.task))

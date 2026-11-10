@@ -5,19 +5,32 @@ import os
 from .memory_base import MASMemoryBase
 from .prompt import (
     INTRINSICMEMORY_ALFWORLD,
+    INTRINSICMEMORY_ALFWORLD_SCHEMA,
     INTRINSICMEMORY_BABYAI,
+    INTRINSICMEMORY_BABYAI_SCHEMA,
     INTRINSICMEMORY_DEFAULT,
     INTRINSICMEMORY_FEVER,
+    INTRINSICMEMORY_FEVER_SCHEMA,
     INTRINSICMEMORY_HOTPOTQA,
+    INTRINSICMEMORY_HOTPOTQA_SCHEMA,
     INTRINSICMEMORY_JERICHO,
+    INTRINSICMEMORY_JERICHO_SCHEMA,
     INTRINSICMEMORY_NOTEMPLATE,
     INTRINSICMEMORY_PDDL,
+    INTRINSICMEMORY_PDDL_SCHEMA,
     INTRINSICMEMORY_SCIWORLD,
+    INTRINSICMEMORY_SCIWORLD_SCHEMA,
 )
 from ..common import MASMessage # a MASMessage, which is a specific type of message used in MAS
 from mas.llm import Message, GPTChat # a "normal" message, not a MASMessage?
 
 logger = logging.getLogger(__name__)
+
+
+def agent_view(task_description: str, memory: str, trajectory: str) -> str:
+    """The task, a memory and the trajectory, laid out as the agent is shown them."""
+    return f"{task_description} \n\n### Agent Memory\n \n        {memory} \n\n {trajectory}"
+
 
 @dataclass
 class IntrinsicMASMemory(MASMemoryBase):
@@ -83,10 +96,8 @@ class IntrinsicMASMemory(MASMemoryBase):
         if len(mas_message.task_trajectory) > 5:
             self.agent_intrinsic_memory = self.llm_model(messages, intrinsic=True)
 
-        summary_message = f"""{mas_message.task_description} \n\n### Agent Memory\n 
-        {self.agent_intrinsic_memory} \n\n {mas_message.task_trajectory}"""
-
-        return summary_message
+        return agent_view(mas_message.task_description, self.agent_intrinsic_memory,
+                          mas_message.task_trajectory)
 
 
     def save_task_context(self, label: bool, feedback: str = None) -> None:
@@ -148,3 +159,37 @@ class IntrinsicMASMemoryNoTemplate(IntrinsicMASMemory):
 
     system_prompt = INTRINSICMEMORY_NOTEMPLATE.system_prompt
 
+
+@dataclass
+class IntrinsicMASMemoryPDDLSchema(IntrinsicMASMemory):
+    system_prompt = INTRINSICMEMORY_PDDL_SCHEMA.system_prompt
+
+
+@dataclass
+class IntrinsicMASMemoryFEVERSchema(IntrinsicMASMemory):
+    system_prompt = INTRINSICMEMORY_FEVER_SCHEMA.system_prompt
+
+
+@dataclass
+class IntrinsicMASMemoryHOTPOTQASchema(IntrinsicMASMemory):
+    system_prompt = INTRINSICMEMORY_HOTPOTQA_SCHEMA.system_prompt
+
+
+@dataclass
+class IntrinsicMASMemoryALFWORLDSchema(IntrinsicMASMemory):
+    system_prompt = INTRINSICMEMORY_ALFWORLD_SCHEMA.system_prompt
+
+
+@dataclass
+class IntrinsicMASMemoryBABYAISchema(IntrinsicMASMemory):
+    system_prompt = INTRINSICMEMORY_BABYAI_SCHEMA.system_prompt
+
+
+@dataclass
+class IntrinsicMASMemoryJERICHOSchema(IntrinsicMASMemory):
+    system_prompt = INTRINSICMEMORY_JERICHO_SCHEMA.system_prompt
+
+
+@dataclass
+class IntrinsicMASMemorySCIWORLDSchema(IntrinsicMASMemory):
+    system_prompt = INTRINSICMEMORY_SCIWORLD_SCHEMA.system_prompt

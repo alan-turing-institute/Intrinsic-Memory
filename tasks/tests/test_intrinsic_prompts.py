@@ -16,15 +16,22 @@ import pytest
 from mas.module_map import MAS_MEMORY_MODULES
 from mas.memory.mas_memory.prompt import (
     INTRINSICMEMORY_ALFWORLD,
+    INTRINSICMEMORY_ALFWORLD_SCHEMA,
     INTRINSICMEMORY_BABYAI,
+    INTRINSICMEMORY_BABYAI_SCHEMA,
     INTRINSICMEMORY_DEFAULT,
     INTRINSICMEMORY_FEVER,
+    INTRINSICMEMORY_FEVER_SCHEMA,
     INTRINSICMEMORY_HOTPOTQA,
+    INTRINSICMEMORY_HOTPOTQA_SCHEMA,
     INTRINSICMEMORY_JERICHO,
+    INTRINSICMEMORY_JERICHO_SCHEMA,
     INTRINSICMEMORY_LLM_TEMPLATE,
     INTRINSICMEMORY_NOTEMPLATE,
     INTRINSICMEMORY_PDDL,
+    INTRINSICMEMORY_PDDL_SCHEMA,
     INTRINSICMEMORY_SCIWORLD,
+    INTRINSICMEMORY_SCIWORLD_SCHEMA,
 )
 
 from tasks.tests.fakes import FakeEmbeddingFunc, FakeLLM
@@ -39,6 +46,13 @@ SYSTEM_PROMPT_OWNER = {
     'intrinsicmemory-sciworld': INTRINSICMEMORY_SCIWORLD,
     'intrinsicmemory-notemplate': INTRINSICMEMORY_NOTEMPLATE,
     'intrinsicmemory-llm-structured-template': INTRINSICMEMORY_LLM_TEMPLATE,
+    'intrinsicmemory-pddl-schema': INTRINSICMEMORY_PDDL_SCHEMA,
+    'intrinsicmemory-fever-schema': INTRINSICMEMORY_FEVER_SCHEMA,
+    'intrinsicmemory-hotpotqa-schema': INTRINSICMEMORY_HOTPOTQA_SCHEMA,
+    'intrinsicmemory-alfworld-schema': INTRINSICMEMORY_ALFWORLD_SCHEMA,
+    'intrinsicmemory-babyai-schema': INTRINSICMEMORY_BABYAI_SCHEMA,
+    'intrinsicmemory-jericho-schema': INTRINSICMEMORY_JERICHO_SCHEMA,
+    'intrinsicmemory-sciworld-schema': INTRINSICMEMORY_SCIWORLD_SCHEMA,
 }
 
 # One shared update prompt across the family: the memory template is the variable
