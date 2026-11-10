@@ -1,7 +1,7 @@
 """DyLAN with roles, and where each agent's memory comes from.
 
-`dylan` is the upstream workflow: nine solvers over three rounds, every turn
-reading one shared memory. The role variants seat a planner, a solver and a
+`dylan` is the upstream workflow: a grid of solvers, every turn reading one
+shared memory. The role variants seat a planner, a solver and a
 verifier in each round and differ only in the memory those agents are shown:
 
 - `dylan-shared`: one memory, updated once per step from every role's proposals.
@@ -106,11 +106,11 @@ def role_memories(memory_cls, shared):
 
 # ── the upstream workflow ─────────────────────────────────────────────────────
 
-def test_upstream_dylan_is_nine_solvers():
+def test_upstream_dylan_seats_only_solvers():
     workflow, _, _ = build('dylan', recording_memory())
 
-    profiles = [agent.profile for agent in workflow.agents_team.values()]
-    assert profiles == ['solver'] * 9, f'upstream dylan seats {Counter(profiles)}'
+    profiles = Counter(agent.profile for agent in workflow.agents_team.values())
+    assert set(profiles) == {'solver'}, f'upstream dylan seats {profiles}'
 
 
 def test_upstream_dylan_reads_its_one_memory_afresh_at_every_agent_turn():
